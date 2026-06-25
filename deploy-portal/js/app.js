@@ -115,41 +115,52 @@ try {
   $r = Invoke-WebRequest -Uri "$API/accounts?page=1&per_page=5" -Headers @{ Authorization = $auth } -UseBasicParsing
   $d = $r.Content | ConvertFrom-Json
   if (-not $d.success) { throw "Invalid API token" }
-  Write-Host "  OK" -ForegroundColor Green
+  Write-Host "  OK (Account: $($d.result[0].name))" -ForegroundColor Green
 
-  # Step 3: KV namespace
-  Write-Host "[3/5] Setting up KV namespace..." -ForegroundColor Yellow
+  # Step 3: Create KV namespace (skip listing, just create)
+  Write-Host "[3/5] Creating KV namespace..." -ForegroundColor Yellow
   $kvId = $null
+  $body = @{ title = $KV_NAME } | ConvertTo-Json
   try {
-    $r = Invoke-WebRequest -Uri "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces?page=1&per_page=100" -Headers @{ Authorization = $auth } -UseBasicParsing
-    $d = $r.Content | ConvertFrom-Json
-    foreach ($ns in $d.result) { if ($ns.title -eq $KV_NAME) { $kvId = $ns.id; break } }
-  } catch { }
-
-  if (-not $kvId) {
-    $body = @{ title = $KV_NAME } | ConvertTo-Json
     $r = Invoke-WebRequest -Uri "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces" -Headers @{ Authorization = $auth; "Content-Type" = "application/json" } -Method Post -Body $body -UseBasicParsing
     $d = $r.Content | ConvertFrom-Json
-    if (-not $d.success) { throw "KV create failed" }
-    $kvId = $d.result.id
-    Write-Host "  Created: $kvId" -ForegroundColor Green
-  } else {
-    Write-Host "  Found: $kvId" -ForegroundColor Green
+    if ($d.success) {
+      $kvId = $d.result.id
+      Write-Host "  Created: $kvId" -ForegroundColor Green
+    } else {
+      Write-Host "  Response: $($r.Content)" -ForegroundColor Yellow
+    }
+  } catch {
+    $errBody = $_.ErrorDetails.Message
+    if ($errBody -match '"result":\{[^}]*"id":"([^"]+)"') {
+      $kvId = $Matches[1]
+      Write-Host "  Already exists: $kvId" -ForegroundColor Green
+    } else {
+      Write-Host "  KV Error: $errBody" -ForegroundColor Yellow
+      Write-Host "  Continuing without KV binding..." -ForegroundColor Yellow
+    }
   }
 
   # Step 4: Upload worker
   Write-Host "[4/5] Uploading worker..." -ForegroundColor Yellow
-  $meta = @{ main_module = "index.js"; compatibility_date = "2024-01-01"; bindings = @(@{ type = "kv_namespace"; name = "DEPLOY_JOBS"; namespace_id = $kvId }) } | ConvertTo-Json -Depth 3
+  if ($kvId) {
+    $meta = @{ main_module = "index.js"; compatibility_date = "2024-01-01"; bindings = @(@{ type = "kv_namespace"; name = "DEPLOY_JOBS"; namespace_id = $kvId }) } | ConvertTo-Json -Depth 3
+  } else {
+    $meta = @{ main_module = "index.js"; compatibility_date = "2024-01-01" } | ConvertTo-Json -Depth 3
+  }
 
-  $tmpMeta = "$env:TEMP\\flowkit_meta.json"
-  $tmpJs = "$env:TEMP\\flowkit_worker.js"
+  $tmpMeta = Join-Path $env:TEMP "flowkit_meta.json"
+  $tmpJs = Join-Path $env:TEMP "flowkit_worker.js"
   [System.IO.File]::WriteAllText($tmpMeta, $meta, [System.Text.Encoding]::UTF8)
   [System.IO.File]::WriteAllText($tmpJs, $scriptContent, [System.Text.Encoding]::UTF8)
 
   $form = @{ metadata = Get-Item $tmpMeta; "index.js" = Get-Item $tmpJs }
   $r = Invoke-WebRequest -Uri "$API/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME" -Headers @{ Authorization = $auth } -Method Put -Form $form -UseBasicParsing
   $d = $r.Content | ConvertFrom-Json
-  if (-not $d.success) { throw "Upload failed: $($d.errors | ConvertFrom-Json | Select-Object -First 1 | ForEach-Object { $_.message })" }
+  if (-not $d.success) {
+    Write-Host "  Upload response: $($r.Content)" -ForegroundColor Yellow
+    throw "Upload failed"
+  }
   Write-Host "  OK" -ForegroundColor Green
 
   Remove-Item $tmpMeta -ErrorAction SilentlyContinue
