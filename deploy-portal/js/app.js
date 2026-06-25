@@ -153,15 +153,15 @@ $metadata = @{
 } | ConvertTo-Json -Depth 3
 
 $boundary = [System.Guid]::NewGuid().ToString()
-$LF = "`r`n"
+$LF = "\`r\`n"
 $bodyLines = @(
     "--$boundary",
-    "Content-Disposition: form-data; name=`"metadata`"",
+    "Content-Disposition: form-data; name=\`"metadata\`"",
     "Content-Type: application/json",
     "",
     $metadata,
     "--$boundary",
-    "Content-Disposition: form-data; name=`"index.js`"; filename=`"index.js`"",
+    "Content-Disposition: form-data; name=\`"index.js\`"; filename=\`"index.js\`"",
     "Content-Type: application/javascript+module",
     "",
     $scriptContent,
@@ -205,6 +205,7 @@ Write-Host "URL copied to clipboard!" -ForegroundColor Green
 Write-Host ""
 Read-Host "Press Enter to exit"
 `;
+}
 
 function saveWorkerUrl() {
   const url = document.getElementById('worker-url-input').value.trim();
