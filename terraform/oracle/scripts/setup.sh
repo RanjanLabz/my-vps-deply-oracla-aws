@@ -45,6 +45,13 @@ WS_PORT=9222
 CHROME_MANAGER_MAX_PROFILES=3
 MAX_CONCURRENT_REQUESTS=5
 EOF
+
+  # Build frontend
+  cd frontend
+  npm install
+  PUBLIC_IP=$(curl -s http://checkip.amazonaws.com)
+  NEXT_PUBLIC_API_URL=http://$PUBLIC_IP:8100 npm run build
+  cd ..
 '
 
 # Setup Xvfb display
@@ -82,12 +89,35 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+# Setup Flow Kit frontend service
+cat > /etc/systemd/system/flowkit-ui.service << 'EOF'
+[Unit]
+Description=Flow Kit Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=flowkit
+WorkingDirectory=/home/flowkit/flowkit/frontend
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+ExecStart=/home/flowkit/flowkit/frontend/node_modules/.bin/next start -p 3000 -H 0.0.0.0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 systemctl daemon-reload
 systemctl enable xvfb
 systemctl enable flowkit-backend
+systemctl enable flowkit-ui
 systemctl start xvfb
 systemctl start flowkit-backend
+systemctl start flowkit-ui
 
 echo "Flow Kit deployment complete!"
-echo "Backend should be running on port 8100"
-echo "WebSocket on port 9222"
+echo "Backend: http://$PUBLIC_IP:8100"
+echo "Frontend: http://$PUBLIC_IP:3000"
+echo "WebSocket: ws://$PUBLIC_IP:9222"
