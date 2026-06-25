@@ -94,7 +94,6 @@ function generateDeployScript(accountId, apiToken, workerName) {
 $ACCOUNT_ID = "${accountId}"
 $API_TOKEN = "${apiToken}"
 $WORKER_NAME = "${workerName}"
-$KV_NAME = "DEPLOY_JOBS"
 $BUNDLE_URL = "https://raw.githubusercontent.com/RanjanLabz/my-vps-deply-oracla-aws/main/workers/dist/bundle.js"
 $API = "https://api.cloudflare.com/client/v4"
 $auth = "Bearer $API_TOKEN"
@@ -103,42 +102,48 @@ Write-Host ""
 Write-Host "=== FlowKit Worker Deploy ===" -ForegroundColor Cyan
 Write-Host ""
 
+function cfApi($method, $url, $body) {
+  $headers = @{ Authorization = $auth }
+  $params = @{ Uri = $url; Headers = $headers; Method = $method; UseBasicParsing = $true }
+  if ($body) {
+    $headers["Content-Type"] = "application/json"
+    $params.Body = $body
+  }
+  try {
+    $r = Invoke-WebRequest @params
+    return ($r.Content | ConvertFrom-Json)
+  } catch {
+    $ex = $_.Exception
+    if ($ex.Response) {
+      $sr = New-Object System.IO.StreamReader($ex.Response.GetResponseStream())
+      $errBody = $sr.ReadToEnd()
+      Write-Host "  API Error: $errBody" -ForegroundColor Red
+    }
+    return $null
+  }
+}
+
 try {
   # Step 1: Fetch worker script
   Write-Host "[1/5] Fetching worker script..." -ForegroundColor Yellow
-  $resp = Invoke-WebRequest -Uri $BUNDLE_URL -UseBasicParsing
-  $scriptContent = $resp.Content
+  $scriptContent = (Invoke-WebRequest -Uri $BUNDLE_URL -UseBasicParsing).Content
   Write-Host "  OK ($($scriptContent.Length) bytes)" -ForegroundColor Green
 
   # Step 2: Verify credentials
   Write-Host "[2/5] Verifying credentials..." -ForegroundColor Yellow
-  $r = Invoke-WebRequest -Uri "$API/accounts?page=1&per_page=5" -Headers @{ Authorization = $auth } -UseBasicParsing
-  $d = $r.Content | ConvertFrom-Json
-  if (-not $d.success) { throw "Invalid API token" }
-  Write-Host "  OK (Account: $($d.result[0].name))" -ForegroundColor Green
+  $accts = cfApi "GET" "$API/accounts?page=1&per_page=5" $null
+  if (-not $accts -or -not $accts.success) { throw "Invalid API token. Check your token has Workers Scripts:Edit and KV Storage:Edit." }
+  Write-Host "  OK (Account: $($accts.result[0].name))" -ForegroundColor Green
 
-  # Step 3: Create KV namespace (skip listing, just create)
-  Write-Host "[3/5] Creating KV namespace..." -ForegroundColor Yellow
+  # Step 3: KV namespace (try create, skip if fails)
+  Write-Host "[3/5] Setting up KV namespace..." -ForegroundColor Yellow
   $kvId = $null
-  $body = @{ title = $KV_NAME } | ConvertTo-Json
-  try {
-    $r = Invoke-WebRequest -Uri "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces" -Headers @{ Authorization = $auth; "Content-Type" = "application/json" } -Method Post -Body $body -UseBasicParsing
-    $d = $r.Content | ConvertFrom-Json
-    if ($d.success) {
-      $kvId = $d.result.id
-      Write-Host "  Created: $kvId" -ForegroundColor Green
-    } else {
-      Write-Host "  Response: $($r.Content)" -ForegroundColor Yellow
-    }
-  } catch {
-    $errBody = $_.ErrorDetails.Message
-    if ($errBody -match '"result":\{[^}]*"id":"([^"]+)"') {
-      $kvId = $Matches[1]
-      Write-Host "  Already exists: $kvId" -ForegroundColor Green
-    } else {
-      Write-Host "  KV Error: $errBody" -ForegroundColor Yellow
-      Write-Host "  Continuing without KV binding..." -ForegroundColor Yellow
-    }
+  $kvResult = cfApi "POST" "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces" (@{ title = "DEPLOY_JOBS" } | ConvertTo-Json)
+  if ($kvResult -and $kvResult.success) {
+    $kvId = $kvResult.result.id
+    Write-Host "  Created: $kvId" -ForegroundColor Green
+  } else {
+    Write-Host "  KV failed (continuing without KV binding)" -ForegroundColor Yellow
   }
 
   # Step 4: Upload worker
@@ -154,14 +159,22 @@ try {
   [System.IO.File]::WriteAllText($tmpMeta, $meta, [System.Text.Encoding]::UTF8)
   [System.IO.File]::WriteAllText($tmpJs, $scriptContent, [System.Text.Encoding]::UTF8)
 
+  $url = "$API/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME"
+  $headers = @{ Authorization = $auth }
   $form = @{ metadata = Get-Item $tmpMeta; "index.js" = Get-Item $tmpJs }
-  $r = Invoke-WebRequest -Uri "$API/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME" -Headers @{ Authorization = $auth } -Method Put -Form $form -UseBasicParsing
-  $d = $r.Content | ConvertFrom-Json
-  if (-not $d.success) {
-    Write-Host "  Upload response: $($r.Content)" -ForegroundColor Yellow
-    throw "Upload failed"
+  try {
+    $r = Invoke-WebRequest -Uri $url -Headers $headers -Method Put -Form $form -UseBasicParsing
+    $d = $r.Content | ConvertFrom-Json
+    if (-not $d.success) { throw "Upload failed" }
+    Write-Host "  OK" -ForegroundColor Green
+  } catch {
+    $ex = $_.Exception
+    if ($ex.Response) {
+      $sr = New-Object System.IO.StreamReader($ex.Response.GetResponseStream())
+      Write-Host "  Error: $($sr.ReadToEnd())" -ForegroundColor Red
+    }
+    throw "Worker upload failed"
   }
-  Write-Host "  OK" -ForegroundColor Green
 
   Remove-Item $tmpMeta -ErrorAction SilentlyContinue
   Remove-Item $tmpJs -ErrorAction SilentlyContinue
@@ -169,15 +182,11 @@ try {
   # Step 5: Get worker URL
   Write-Host "[5/5] Getting worker URL..." -ForegroundColor Yellow
   $workerUrl = "https://$WORKER_NAME.workers.dev"
-  try {
-    $r = Invoke-WebRequest -Uri "$API/accounts/$ACCOUNT_ID/workers/subdomain" -Headers @{ Authorization = $auth } -UseBasicParsing
-    $d = $r.Content | ConvertFrom-Json
-    if ($d.success -and $d.result.subdomain) {
-      $workerUrl = "https://$WORKER_NAME.$($d.result.subdomain).workers.dev"
-    }
-  } catch { }
+  $subResult = cfApi "GET" "$API/accounts/$ACCOUNT_ID/workers/subdomain" $null
+  if ($subResult -and $subResult.success -and $subResult.result.subdomain) {
+    $workerUrl = "https://$WORKER_NAME.$($subResult.result.subdomain).workers.dev"
+  }
 
-  # Test health
   Write-Host "  Testing..." -ForegroundColor Yellow
   try {
     Invoke-WebRequest -Uri "$workerUrl/api/health" -UseBasicParsing | Out-Null
@@ -193,7 +202,6 @@ try {
   Write-Host "  $workerUrl" -ForegroundColor White -BackgroundColor DarkGreen
   Write-Host ""
   try { Set-Clipboard $workerUrl; Write-Host "Copied to clipboard!" -ForegroundColor Green } catch { }
-  Write-Host ""
 
 } catch {
   Write-Host ""
@@ -201,6 +209,7 @@ try {
   Write-Host ""
 }
 
+Write-Host ""
 Read-Host "Press Enter to exit"
 `;
 }
