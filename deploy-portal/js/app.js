@@ -57,7 +57,7 @@ document.getElementById('form-existing').addEventListener('submit', (e) => {
 });
 
 // ============================================================
-// Worker Deployment (generate console script)
+// Worker Deployment (generate deploy HTML)
 // ============================================================
 function deployWorker() {
   const accountId = document.getElementById('cf-account-id').value.trim();
@@ -69,122 +69,151 @@ function deployWorker() {
     return;
   }
 
-  // Generate the console script
-  const script = generateDeployScript(accountId, apiToken, workerName);
+  // Generate and download deploy HTML file
+  const html = generateDeployHTML(accountId, apiToken, workerName);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'flowkit-deploy.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 
-  // Show script area
-  document.getElementById('worker-script-code').textContent = script;
+  // Show instructions
   document.getElementById('worker-script-area').hidden = false;
+  document.getElementById('worker-script-area').querySelector('.script-block').hidden = true;
+  document.getElementById('worker-instructions-only').hidden = false;
 
-  // Scroll to script
   document.getElementById('worker-script-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function generateDeployScript(accountId, apiToken, workerName) {
-  return `(async () => {
-  const ACCOUNT_ID = '${accountId}';
-  const API_TOKEN = '${apiToken}';
-  const WORKER_NAME = '${workerName}';
-  const KV_NAME = 'DEPLOY_JOBS';
-  const BUNDLE_URL = 'https://raw.githubusercontent.com/RanjanLabz/my-vps-deply-oracla-aws/main/workers/dist/bundle.js';
-  const API = 'https://api.cloudflare.com/client/v4';
+function generateDeployHTML(accountId, apiToken, workerName) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>FlowKit Worker Deploy</title>
+  <style>
+    body { font-family: system-ui; background: #0a0a0f; color: #e8e8ed; padding: 2rem; max-width: 700px; margin: 0 auto; }
+    h1 { color: #6366f1; font-size: 1.5rem; }
+    .log { background: #12121a; border: 1px solid #2a2a3a; border-radius: 8px; padding: 1rem; margin: 1rem 0; font-family: monospace; font-size: 0.85rem; line-height: 1.8; max-height: 400px; overflow-y: auto; }
+    .log .ok { color: #22c55e; } .log .err { color: #ef4444; } .log .info { color: #6366f1; }
+    .url-box { background: #1a1a24; border: 2px solid #22c55e; border-radius: 8px; padding: 1rem; margin: 1rem 0; text-align: center; }
+    .url-box code { font-size: 1.1rem; color: #22c55e; font-weight: bold; }
+    .copy-btn { padding: 0.5rem 1.5rem; background: #6366f1; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; margin-top: 0.5rem; }
+    .copy-btn:hover { background: #818cf8; }
+    #status { font-size: 1rem; margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <h1>FlowKit — Deploy Cloudflare Worker</h1>
+  <p>This page will deploy your FlowKit worker automatically.</p>
+  <div id="status">Starting deployment...</div>
+  <div class="log" id="log"></div>
+  <div id="result-box" style="display:none">
+    <div class="url-box">
+      <div>Worker URL:</div>
+      <code id="worker-url"></code><br>
+      <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('worker-url').textContent);this.textContent='Copied!'">Copy URL</button>
+    </div>
+    <p>Paste this URL in the FlowKit deploy portal and click <strong>"Save URL"</strong>.</p>
+  </div>
+  <script>
+    const ACCOUNT_ID = '${accountId}';
+    const API_TOKEN = '${apiToken}';
+    const WORKER_NAME = '${workerName}';
+    const KV_NAME = 'DEPLOY_JOBS';
+    const BUNDLE_URL = 'https://raw.githubusercontent.com/RanjanLabz/my-vps-deply-oracla-aws/main/workers/dist/bundle.js';
+    const API = 'https://api.cloudflare.com/client/v4';
 
-  const h = (token) => ({ 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' });
-  const log = (msg) => console.log('%c[FlowKit] ' + msg, 'color: #6366f1; font-weight: bold');
-
-  try {
-    log('Fetching worker script from GitHub...');
-    let scriptRes = await fetch(BUNDLE_URL);
-    if (!scriptRes.ok) throw new Error('Failed to fetch worker script from GitHub (HTTP ' + scriptRes.status + ')');
-    let scriptContent = await scriptRes.text();
-    log('Worker script loaded (' + scriptContent.length + ' bytes)');
-
-    log('Verifying credentials...');
-    let r = await fetch(API + '/accounts?page=1&per_page=5', { headers: h(API_TOKEN) });
-    let d = await r.json();
-    if (!d.success) throw new Error('Invalid API token: ' + d.errors?.map(e => e.message).join(', '));
-    log('Credentials OK');
-
-    log('Looking for KV namespace "' + KV_NAME + '"...');
-    let kvId = null, page = 1;
-    while (true) {
-      r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/kv/namespaces?page=' + page + '&per_page=100', { headers: h(API_TOKEN) });
-      d = await r.json();
-      if (!d.success) break;
-      const found = d.result.find(ns => ns.title === KV_NAME);
-      if (found) { kvId = found.id; break; }
-      if (!d.result_info || page >= d.result_info.total_pages) break;
-      page++;
+    function log(msg, cls) {
+      const el = document.getElementById('log');
+      el.innerHTML += '<div class="' + (cls||'info') + '">' + msg + '</div>';
+      el.scrollTop = el.scrollHeight;
     }
 
-    if (!kvId) {
-      log('Creating KV namespace...');
-      r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/kv/namespaces', {
-        method: 'POST', headers: h(API_TOKEN),
-        body: JSON.stringify({ title: KV_NAME })
-      });
-      d = await r.json();
-      if (!d.success) throw new Error('KV create failed: ' + d.errors?.map(e => e.message).join(', '));
-      kvId = d.result.id;
-      log('KV created: ' + kvId);
-    } else {
-      log('KV found: ' + kvId);
-    }
+    (async () => {
+      try {
+        log('Fetching worker script from GitHub...', 'info');
+        let sr = await fetch(BUNDLE_URL);
+        if (!sr.ok) throw new Error('Failed to fetch script (HTTP ' + sr.status + ')');
+        let scriptContent = await sr.text();
+        log('Script loaded (' + scriptContent.length + ' bytes)', 'ok');
 
-    log('Uploading worker...');
-    const metadata = {
-      main_module: 'index.js',
-      compatibility_date: '2024-01-01',
-      bindings: [{ type: 'kv_namespace', name: 'DEPLOY_JOBS', namespace_id: kvId }]
-    };
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('index.js', new Blob([scriptContent], { type: 'application/javascript+module' }), 'index.js');
+        log('Verifying credentials...', 'info');
+        let r = await fetch(API + '/accounts?page=1&per_page=5', { headers: { 'Authorization': 'Bearer ' + API_TOKEN, 'Content-Type': 'application/json' } });
+        let d = await r.json();
+        if (!d.success) throw new Error('Invalid API token: ' + (d.errors?.map(e=>e.message).join(', ')||'unknown'));
+        log('Credentials verified', 'ok');
 
-    r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/scripts/' + WORKER_NAME, {
-      method: 'PUT', headers: { 'Authorization': 'Bearer ' + API_TOKEN }, body: form
-    });
-    d = await r.json();
-    if (!d.success) throw new Error('Upload failed: ' + d.errors?.map(e => e.message).join(', '));
-    log('Worker uploaded!');
+        log('Looking for KV namespace...', 'info');
+        let kvId = null, page = 1;
+        while (true) {
+          r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/kv/namespaces?page=' + page + '&per_page=100', { headers: { 'Authorization': 'Bearer ' + API_TOKEN } });
+          d = await r.json();
+          if (!d.success) break;
+          const found = d.result.find(ns => ns.title === KV_NAME);
+          if (found) { kvId = found.id; break; }
+          if (!d.result_info || page >= d.result_info.total_pages) break;
+          page++;
+        }
 
-    log('Getting worker URL...');
-    r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/subdomain', { headers: h(API_TOKEN) });
-    d = await r.json();
-    let workerUrl = 'https://' + WORKER_NAME + '.workers.dev';
-    if (d.success && d.result?.subdomain) {
-      workerUrl = 'https://' + WORKER_NAME + '.' + d.result.subdomain + '.workers.dev';
-    }
+        if (!kvId) {
+          log('Creating KV namespace...', 'info');
+          r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/kv/namespaces', {
+            method: 'POST', headers: { 'Authorization': 'Bearer ' + API_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: KV_NAME })
+          });
+          d = await r.json();
+          if (!d.success) throw new Error('KV create failed: ' + d.errors?.map(e=>e.message).join(', '));
+          kvId = d.result.id;
+          log('KV created: ' + kvId, 'ok');
+        } else {
+          log('KV found: ' + kvId, 'ok');
+        }
 
-    log('Testing worker...');
-    try {
-      r = await fetch(workerUrl + '/api/health', { signal: AbortSignal.timeout(10000) });
-      if (r.ok) log('Worker is healthy!');
-      else log('Health check returned ' + r.status);
-    } catch (e) {
-      log('Health check pending (may take a few seconds)');
-    }
+        log('Uploading worker script...', 'info');
+        const metadata = {
+          main_module: 'index.js', compatibility_date: '2024-01-01',
+          bindings: [{ type: 'kv_namespace', name: 'DEPLOY_JOBS', namespace_id: kvId }]
+        };
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('index.js', new Blob([scriptContent], { type: 'application/javascript+module' }), 'index.js');
 
-    console.log('%c\\n========================================', 'color: #22c55e');
-    console.log('%c  WORKER URL (copy this):', 'color: #22c55e; font-weight: bold; font-size: 14px');
-    console.log('%c  ' + workerUrl, 'color: #22c55e; font-size: 14px; font-weight: bold');
-    console.log('%c========================================\\n', 'color: #22c55e');
-    console.log('%cPaste this URL in the deploy portal and click "Save URL".', 'color: #8888a0');
+        r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/scripts/' + WORKER_NAME, {
+          method: 'PUT', headers: { 'Authorization': 'Bearer ' + API_TOKEN }, body: form
+        });
+        d = await r.json();
+        if (!d.success) throw new Error('Upload failed: ' + d.errors?.map(e=>e.message).join(', '));
+        log('Worker uploaded!', 'ok');
 
-  } catch (err) {
-    console.error('%c[FlowKit] ERROR: ' + err.message, 'color: #ef4444; font-weight: bold');
-  }
-})();`;
-}
+        log('Getting worker URL...', 'info');
+        r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/subdomain', { headers: { 'Authorization': 'Bearer ' + API_TOKEN } });
+        d = await r.json();
+        let workerUrl = 'https://' + WORKER_NAME + '.workers.dev';
+        if (d.success && d.result?.subdomain) workerUrl = 'https://' + WORKER_NAME + '.' + d.result.subdomain + '.workers.dev';
 
-function copyScript() {
-  const code = document.getElementById('worker-script-code').textContent;
-  navigator.clipboard.writeText(code).then(() => {
-    const btn = document.querySelector('.btn-copy-script');
-    const original = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = original; }, 2000);
-  });
+        log('Testing worker health...', 'info');
+        try {
+          r = await fetch(workerUrl + '/api/health', { signal: AbortSignal.timeout(10000) });
+          if (r.ok) log('Worker is healthy!', 'ok');
+          else log('Health check returned ' + r.status, 'info');
+        } catch(e) { log('Health check pending...', 'info'); }
+
+        document.getElementById('status').innerHTML = '<span style="color:#22c55e;font-weight:bold">Deployment complete!</span>';
+        document.getElementById('worker-url').textContent = workerUrl;
+        document.getElementById('result-box').style.display = 'block';
+
+      } catch (err) {
+        document.getElementById('status').innerHTML = '<span style="color:#ef4444;font-weight:bold">ERROR: ' + err.message + '</span>';
+        log('ERROR: ' + err.message, 'err');
+      }
+    })();
+  <\/script>
+</body>
+</html>`;
 }
 
 function saveWorkerUrl() {

@@ -71,25 +71,18 @@
 
       <!-- Script output area (hidden by default) -->
       <div id="worker-script-area" class="worker-script-area" hidden>
-        <div class="script-header">
-          <h3>Step 1: Copy this script</h3>
-          <button type="button" class="btn-copy-script" onclick="copyScript()">Copy Script</button>
-        </div>
-        <pre class="script-block"><code id="worker-script-code"></code></pre>
-
-        <div class="script-instructions">
-          <h3>Step 2: Run it</h3>
-          <ol>
-            <li>Open <a href="https://dash.cloudflare.com" target="_blank">dash.cloudflare.com</a> in a new tab</li>
-            <li>Press <code>F12</code> to open DevTools</li>
-            <li>Go to <strong>Console</strong> tab</li>
-            <li>Paste the script and press <strong>Enter</strong></li>
-            <li>Copy the worker URL from the output</li>
+        <div id="worker-instructions-only">
+          <h3>Downloaded! Now do this:</h3>
+          <ol class="deploy-steps">
+            <li>Open the downloaded <code>flowkit-deploy.html</code> file in your browser</li>
+            <li>It will automatically deploy the worker</li>
+            <li>Copy the <strong>Worker URL</strong> from the result page</li>
+            <li>Paste it in the field below and click <strong>"Save URL"</strong></li>
           </ol>
         </div>
 
         <div class="script-header" style="margin-top:1rem">
-          <h3>Step 3: Paste the worker URL</h3>
+          <h3>Paste the worker URL from the deploy page</h3>
         </div>
         <div class="copy-group">
           <input type="text" id="worker-url-input" placeholder="https://flowkit-deploy.YOUR_SUBDOMAIN.workers.dev" class="url-input">
