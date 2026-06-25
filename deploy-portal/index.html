@@ -72,17 +72,18 @@
       <!-- Script output area (hidden by default) -->
       <div id="worker-script-area" class="worker-script-area" hidden>
         <div id="worker-instructions-only">
-          <h3>Downloaded! Now do this:</h3>
+          <h3>PowerShell script downloaded! Now do this:</h3>
           <ol class="deploy-steps">
-            <li>Open the downloaded <code>flowkit-deploy.html</code> file in your browser</li>
-            <li>It will automatically deploy the worker</li>
-            <li>Copy the <strong>Worker URL</strong> from the result page</li>
+            <li>Open <strong>PowerShell</strong> (or Terminal)</li>
+            <li>Navigate to your Downloads folder: <code>cd ~/Downloads</code></li>
+            <li>Run: <code>powershell -ExecutionPolicy Bypass -File flowkit-deploy.ps1</code></li>
+            <li>Copy the <strong>Worker URL</strong> from the output</li>
             <li>Paste it in the field below and click <strong>"Save URL"</strong></li>
           </ol>
         </div>
 
         <div class="script-header" style="margin-top:1rem">
-          <h3>Paste the worker URL from the deploy page</h3>
+          <h3>Paste the worker URL from the script output</h3>
         </div>
         <div class="copy-group">
           <input type="text" id="worker-url-input" placeholder="https://flowkit-deploy.YOUR_SUBDOMAIN.workers.dev" class="url-input">
