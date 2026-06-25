@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Kit — Deploy to Cloud</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="#6366f1"/>
+          <path d="M8 16l6-8v6h10l-6 8v-6H8z" fill="white"/>
+        </svg>
+        <h1>Flow Kit</h1>
+      </div>
+      <p class="subtitle">One-click deploy to Oracle Cloud or AWS</p>
+    </header>
+
+    <!-- Provider Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="oracle">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2.1L3.8 12.5c-.5.6-.5 1.5 0 2.1l9.4 10.4c.5.6 1.4.6 1.9 0l9.4-10.4c.5-.6.5-1.5 0-2.1L15.1 2.1c-.5-.6-1.4-.6-1.9 0z"/></svg>
+        Oracle Cloud
+      </button>
+      <button class="tab" data-tab="aws">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6.763 10.036c0 .296.032.535.088.71.064.176.144.368.256.576.04.063.056.127.056.183 0 .08-.048.16-.152.24l-.503.335a.383.383 0 01-.208.072c-.08 0-.16-.04-.239-.112a2.47 2.47 0 01-.287-.375 6.18 6.18 0 01-.248-.471c-.622.734-1.405 1.101-2.347 1.101-.67 0-1.205-.191-1.596-.574-.391-.384-.59-.894-.59-1.533 0-.678.239-1.23.726-1.644.487-.415 1.133-.623 1.955-.623.272 0 .551.024.846.064.296.04.6.104.918.176v-.583c0-.607-.127-1.03-.375-1.277-.256-.248-.686-.367-1.3-.367-.28 0-.568.048-.863.144-.296.096-.575.224-.838.376a2.287 2.287 0 01-.28.136c-.048.024-.08.04-.104.048-.048.024-.08.04-.104.048L5.07 8.92c-.04.024-.064.048-.08.072-.016.04-.04.088-.04.152 0 .08.04.16.12.24l1.61 1.134c.064.048.104.08.12.112.016.04.04.08.04.136z"/></svg>
+        AWS
+      </button>
+      <button class="tab" data-tab="existing">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+        Existing VPS
+      </button>
+    </div>
+
+    <!-- Oracle Cloud Form -->
+    <form id="form-oracle" class="form active">
+      <h2>Oracle Cloud Configuration</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="oci-tenancy">Tenancy OCID</label>
+          <input type="text" id="oci-tenancy" placeholder="ocid1.tenancy.oc1..aaaaaaaaxxx" required>
+        </div>
+        <div class="form-group">
+          <label for="oci-user">User OCID</label>
+          <input type="text" id="oci-user" placeholder="ocid1.user.oc1..aaaaaaaaxxx" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="oci-key">Private Key (PEM format)</label>
+        <textarea id="oci-key" rows="6" placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----" required></textarea>
+        <span class="hint">Paste the contents of your OCI API private key file (.pem)</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="oci-fingerprint">API Key Fingerprint</label>
+          <input type="text" id="oci-fingerprint" placeholder="aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99" required>
+        </div>
+        <div class="form-group">
+          <label for="oci-compartment">Compartment OCID</label>
+          <input type="text" id="oci-compartment" placeholder="ocid1.compartment.oc1..aaaaaaaaxxx">
+          <span class="hint">Leave empty to use tenancy root compartment</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="oci-region">Region</label>
+          <select id="oci-region">
+            <option value="ap-singapore-1">ap-singapore-1 (Singapore)</option>
+            <option value="us-ashburn-1">us-ashburn-1 (Virginia)</option>
+            <option value="us-phoenix-1">us-phoenix-1 (Phoenix)</option>
+            <option value="eu-frankfurt-1">eu-frankfurt-1 (Frankfurt)</option>
+            <option value="eu-london-1">eu-london-1 (London)</option>
+            <option value="ap-tokyo-1">ap-tokyo-1 (Tokyo)</option>
+            <option value="ap-seoul-1">ap-seoul-1 (Seoul)</option>
+            <option value="ap-melbourne-1">ap-melbourne-1 (Melbourne)</option>
+            <option value="sa-saopaulo-1">sa-saopaulo-1 (Sao Paulo)</option>
+            <option value="ca-toronto-1">ca-toronto-1 (Toronto)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="oci-shape">Instance Shape</label>
+          <select id="oci-shape">
+            <option value="VM.Standard.E2.1.Micro">VM.Standard.E2.1.Micro (Free Tier — 1 OCPU, 1GB RAM)</option>
+            <option value="VM.Standard.A1.Flex">VM.Standard.A1.Flex (ARM — 1 OCPU, 6GB RAM)</option>
+            <option value="VM.Standard.E2.1">VM.Standard.E2.1 (1 OCPU, 8GB RAM)</option>
+            <option value="VM.Standard.E4.Flex">VM.Standard.E4.Flex (1 OCPU, 8GB RAM)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="oci-image">OS Image</label>
+          <select id="oci-image">
+            <option value="Ubuntu 22.04">Ubuntu 22.04</option>
+            <option value="Ubuntu 24.04">Ubuntu 24.04</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="oci-ocpus">OCPU Count (Flex shapes)</label>
+          <input type="number" id="oci-ocpus" value="1" min="1" max="4">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="oci-ssh">SSH Public Key</label>
+        <textarea id="oci-ssh" rows="4" placeholder="ssh-rsa AAAA..." required></textarea>
+        <span class="hint">Paste your public key (contents of <code>~/.ssh/id_rsa.pub</code>)</span>
+      </div>
+
+      <button type="submit" class="btn-deploy">
+        <span class="btn-text">Deploy to Oracle Cloud</span>
+        <span class="btn-loader" hidden>
+          <svg class="spinner" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>
+          Deploying...
+        </span>
+      </button>
+    </form>
+
+    <!-- AWS Form -->
+    <form id="form-aws" class="form">
+      <h2>AWS Configuration</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="aws-access">Access Key ID</label>
+          <input type="text" id="aws-access" placeholder="AKIA..." required>
+        </div>
+        <div class="form-group">
+          <label for="aws-secret">Secret Access Key</label>
+          <input type="password" id="aws-secret" placeholder="wJalrXUtnFEMI/K7MDENG..." required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="aws-region">Region</label>
+          <select id="aws-region">
+            <option value="us-east-1">us-east-1 (N. Virginia)</option>
+            <option value="us-east-2">us-east-2 (Ohio)</option>
+            <option value="us-west-1">us-west-1 (N. California)</option>
+            <option value="us-west-2">us-west-2 (Oregon)</option>
+            <option value="eu-west-1">eu-west-1 (Ireland)</option>
+            <option value="eu-west-2">eu-west-2 (London)</option>
+            <option value="eu-central-1">eu-central-1 (Frankfurt)</option>
+            <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+            <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+            <option value="ap-south-1">ap-south-1 (Mumbai)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="aws-instance">Instance Type</label>
+          <select id="aws-instance">
+            <option value="t3.micro">t3.micro (Free Tier — 2 vCPU, 1GB RAM)</option>
+            <option value="t3a.micro">t3a.micro (Free Tier — 2 vCPU, 1GB RAM)</option>
+            <option value="t3.small">t3.small (2 vCPU, 2GB RAM)</option>
+            <option value="t3a.small">t3a.small (2 vCPU, 2GB RAM)</option>
+            <option value="t3.medium">t3.medium (2 vCPU, 4GB RAM)</option>
+            <option value="t3a.medium">t3a.medium (2 vCPU, 4GB RAM)</option>
+            <option value="t3.large">t3.large (2 vCPU, 8GB RAM)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="aws-ami">AMI Image</label>
+        <select id="aws-ami">
+          <option value="ubuntu-22.04">Ubuntu 22.04 LTS</option>
+          <option value="ubuntu-24.04">Ubuntu 24.04 LTS</option>
+          <option value="amazon-linux-2">Amazon Linux 2</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="aws-ssh">SSH Public Key</label>
+        <textarea id="aws-ssh" rows="4" placeholder="ssh-rsa AAAA..." required></textarea>
+        <span class="hint">Paste your public key (contents of <code>~/.ssh/id_rsa.pub</code>)</span>
+      </div>
+
+      <button type="submit" class="btn-deploy">
+        <span class="btn-text">Deploy to AWS</span>
+        <span class="btn-loader" hidden>
+          <svg class="spinner" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>
+          Deploying...
+        </span>
+      </button>
+    </form>
+
+    <!-- Existing VPS Form -->
+    <form id="form-existing" class="form">
+      <h2>Connect to Existing VPS</h2>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="vps-ip">VPS IP Address</label>
+          <input type="text" id="vps-ip" placeholder="192.168.1.100" required>
+        </div>
+        <div class="form-group">
+          <label for="vps-user">SSH Username</label>
+          <input type="text" id="vps-user" value="ubuntu" required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="vps-port">SSH Port</label>
+          <input type="number" id="vps-port" value="22" min="1" max="65535">
+        </div>
+        <div class="form-group">
+          <label for="vps-provider">VPS Provider</label>
+          <select id="vps-provider">
+            <option value="oracle">Oracle Cloud (Ubuntu)</option>
+            <option value="aws">AWS EC2 (Ubuntu)</option>
+            <option value="other">Other (Ubuntu)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="vps-ssh-key">SSH Private Key</label>
+        <textarea id="vps-ssh-key" rows="8" placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----" required></textarea>
+        <span class="hint">Paste the contents of your SSH private key file</span>
+      </div>
+
+      <button type="submit" class="btn-deploy">
+        <span class="btn-text">Connect & Install</span>
+        <span class="btn-loader" hidden>
+          <svg class="spinner" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>
+          Installing...
+        </span>
+      </button>
+    </form>
+
+    <!-- Progress Log -->
+    <div id="progress" class="progress" hidden>
+      <div class="progress-header">
+        <h3>Deployment Progress</h3>
+        <span id="progress-status" class="status-badge">Running</span>
+      </div>
+      <div id="progress-log" class="log"></div>
+    </div>
+
+    <!-- Success Result -->
+    <div id="result" class="result" hidden>
+      <div class="result-icon">✅</div>
+      <h2>Deployment Complete!</h2>
+      <div class="result-details">
+        <div class="result-item">
+          <label>VPS IP</label>
+          <div class="copy-group">
+            <code id="result-ip"></code>
+            <button class="btn-copy" onclick="copyText('result-ip')">Copy</button>
+          </div>
+        </div>
+        <div class="result-item">
+          <label>Frontend URL</label>
+          <div class="copy-group">
+            <a id="result-frontend" href="#" target="_blank"></a>
+            <button class="btn-copy" onclick="copyText('result-frontend')">Copy</button>
+          </div>
+        </div>
+        <div class="result-item">
+          <label>Backend API</label>
+          <div class="copy-group">
+            <a id="result-backend" href="#" target="_blank"></a>
+            <button class="btn-copy" onclick="copyText('result-backend')">Copy</button>
+          </div>
+        </div>
+        <div class="result-item">
+          <label>Auth Token</label>
+          <div class="copy-group">
+            <code id="result-token"></code>
+            <button class="btn-copy" onclick="copyText('result-token')">Copy</button>
+          </div>
+        </div>
+      </div>
+      <div class="result-next">
+        <h3>Next Steps</h3>
+        <ol>
+          <li>Open the <strong>Frontend URL</strong> in your browser</li>
+          <li>Install the Chrome extension on your local machine</li>
+          <li>In Chrome DevTools Console, run:
+            <pre><code id="result-cmd"></code></pre>
+          </li>
+        </ol>
+      </div>
+      <button class="btn-deploy" onclick="resetUI()">Deploy Another Instance</button>
+    </div>
+
+    <!-- Error -->
+    <div id="error" class="error" hidden>
+      <div class="error-icon">❌</div>
+      <h2>Deployment Failed</h2>
+      <p id="error-message"></p>
+      <button class="btn-deploy" onclick="resetUI()">Try Again</button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Flow Kit — Open Source AI Video Generation</p>
+      <p class="footer-links">
+        <a href="https://github.com" target="_blank">GitHub</a>
+        <span>·</span>
+        <a href="#" onclick="showDocs()">Documentation</a>
+      </p>
+    </footer>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

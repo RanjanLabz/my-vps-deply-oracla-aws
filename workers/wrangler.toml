@@ -1,0 +1,28 @@
+name = "flowkit-deploy"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Your custom domain (configure in Cloudflare Dashboard)
+# routes = [
+#   { pattern = "deploy.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]
+
+# Or use workers.dev subdomain
+# workers_dev = true
+
+# Environment variables (set via `wrangler secret put`)
+# ORACLE_TENANCY, ORACLE_USER, ORACLE_KEY, etc. are NOT needed here
+# Credentials come from the user via the UI at runtime
+
+# Rate limiting
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1"
+simple = { limit = 5, period = 3600 }
+
+# KV for storing deployment jobs
+[[kv_namespaces]]
+binding = "DEPLOY_JOBS"
+id = "YOUR_KV_NAMESPACE_ID"

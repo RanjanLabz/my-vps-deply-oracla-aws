@@ -1,0 +1,54 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Chrome
+chrome_for_testing/
+chrome_profiles/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Database
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp scripts (not for repo)
+check_*.py
+fix_*.py
+bind_*.py
+setup_*.py
+send_*.py
+test_*.py
+unbind_*.py
+cleanup_*.py
+force_*.py
+final_*.py
+reset_*.py
+mon_*.py
+
+# Temp
+*.tar.gz
+tmp/
