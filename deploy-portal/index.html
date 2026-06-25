@@ -23,7 +23,11 @@
 
     <!-- Provider Tabs -->
     <div class="tabs">
-      <button class="tab active" data-tab="oracle">
+      <button class="tab active" data-tab="worker">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2.1L3.8 12.5c-.5.6-.5 1.5 0 2.1l9.4 10.4c.5.6 1.4.6 1.9 0l9.4-10.4c.5-.6.5-1.5 0-2.1L15.1 2.1c-.5-.6-1.4-.6-1.9 0z"/></svg>
+        Setup Worker
+      </button>
+      <button class="tab" data-tab="oracle">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13.2 2.1L3.8 12.5c-.5.6-.5 1.5 0 2.1l9.4 10.4c.5.6 1.4.6 1.9 0l9.4-10.4c.5-.6.5-1.5 0-2.1L15.1 2.1c-.5-.6-1.4-.6-1.9 0z"/></svg>
         Oracle Cloud
       </button>
@@ -37,8 +41,55 @@
       </button>
     </div>
 
+    <!-- Cloudflare Worker Form -->
+    <form id="form-worker" class="form active">
+      <h2>Setup Cloudflare Worker</h2>
+      <p class="form-desc">Deploy the backend worker that handles Oracle Cloud and AWS API calls. Required before using the Oracle Cloud or AWS tabs.</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="cf-account-id">Cloudflare Account ID</label>
+          <input type="text" id="cf-account-id" placeholder="Found in Dashboard → right sidebar" required>
+          <span class="hint">Go to <a href="https://dash.cloudflare.com" target="_blank">dash.cloudflare.com</a> → select your domain → right sidebar</span>
+        </div>
+        <div class="form-group">
+          <label for="cf-api-token">Cloudflare API Token</label>
+          <input type="password" id="cf-api-token" placeholder="Create at Dashboard → My Profile → API Tokens" required>
+          <span class="hint">Create token with: <code>Workers Scripts: Edit</code> + <code>KV Storage: Edit</code></span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="cf-worker-name">Worker Name</label>
+        <input type="text" id="cf-worker-name" value="flowkit-deploy" required>
+        <span class="hint">Default: <code>flowkit-deploy</code> — will be available at <code>https://flowkit-deploy.YOUR_SUBDOMAIN.workers.dev</code></span>
+      </div>
+
+      <div class="worker-status" id="worker-status">
+        <div class="status-row">
+          <span class="status-dot" id="worker-dot"></span>
+          <span id="worker-status-text">Worker not deployed</span>
+        </div>
+        <div id="worker-url-display" class="worker-url" hidden>
+          <label>Worker URL</label>
+          <div class="copy-group">
+            <code id="worker-url-text"></code>
+            <button type="button" class="btn-copy" onclick="copyText('worker-url-text')">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-deploy">
+        <span class="btn-text">Deploy Worker</span>
+        <span class="btn-loader" hidden>
+          <svg class="spinner" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>
+          Deploying...
+        </span>
+      </button>
+    </form>
+
     <!-- Oracle Cloud Form -->
-    <form id="form-oracle" class="form active">
+    <form id="form-oracle" class="form">
       <h2>Oracle Cloud Configuration</h2>
 
       <div class="form-row">
