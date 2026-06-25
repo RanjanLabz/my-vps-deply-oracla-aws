@@ -374,3 +374,13 @@ To host the deploy portal on GitHub Pages:
 | `aws-setup.sh` | AWS EC2 | Ubuntu 22.04/24.04, t3/t3a instances |
 
 Both scripts install: Python 3.11, Node.js 18, Chrome for Testing, Xvfb, and create systemd services.
+
+
+
+### Worker Configuration
+
+After deploying the Worker, update `deploy-portal/config.js` with your Worker URL.
+
+### Oracle Cloud Setup
+
+See [terraform/oracle/README.md](terraform/oracle/README.md) for one-command deployment using Terraform.

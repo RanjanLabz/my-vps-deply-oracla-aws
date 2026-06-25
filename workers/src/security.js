@@ -56,6 +56,9 @@ export function sanitizeLog(msg) {
 
 // Rate limit check using KV
 export async function checkRateLimit(env, ip) {
+  if (!env.DEPLOY_JOBS) {
+    return { allowed: true, remaining: 99 };
+  }
   const key = `rate:${ip}`;
   const now = Date.now();
   const windowMs = 3600000; // 1 hour

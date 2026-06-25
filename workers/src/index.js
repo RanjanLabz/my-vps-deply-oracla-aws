@@ -27,6 +27,11 @@ export default {
 
     const url = new URL(request.url);
 
+    // GET /api/health
+    if (request.method === 'GET' && url.pathname === '/api/health') {
+      return jsonResponse({ status: 'ok', timestamp: Date.now() });
+    }
+
     // POST /api/deploy
     if (request.method === 'POST' && url.pathname === '/api/deploy') {
       return handleDeploy(request, env, ctx);

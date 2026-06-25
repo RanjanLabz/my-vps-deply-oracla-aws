@@ -1,0 +1,14 @@
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to git
+
+tenancy_ocid    = "ocid1.tenancy.oc1..aaaaaaa..."
+user_ocid       = "ocid1.user.oc1..aaaaaaaa..."
+fingerprint     = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+private_key_path = "~/.oci/oracle-flow2api_key.pem"
+region          = "ap-singapore-1"
+ssh_public_key  = "ssh-rsa AAAA... oracle-flow2api"
+
+instance_name = "flowkit-vps"
+instance_shape = "VM.Standard.A1.Flex"
+ocpus         = 1
+memory_gb     = 6

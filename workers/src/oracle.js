@@ -5,6 +5,8 @@
  * Authentication: RSA-SHA256 signing (required for OCI API).
  */
 
+import * as jose from 'jose';
+
 const OCI_API_VERSION = '20160918';
 
 /**
@@ -22,7 +24,8 @@ export async function createOracleInstance(creds, onLog) {
   onLog(`Using availability domain: ${availabilityDomain}`);
 
   // Get the latest Ubuntu image
-  const imageId = await getUbuntuImageId(creds, baseUrl, image, onLog);
+  const imageVersion = image || 'Ubuntu 22.04';
+  const imageId = await getUbuntuImageId(creds, baseUrl, imageVersion, onLog);
   onLog(`Using image: ${imageId}`);
 
   // Get or create VCN
@@ -72,21 +75,29 @@ export async function createOracleInstance(creds, onLog) {
  * Get availability domain for the compartment.
  */
 async function getAvailabilityDomain(creds, baseUrl, onLog) {
-  const compartmentId = creds.compartment || creds.tenancy;
-  const response = await ociFetch(
-    creds, baseUrl, 'GET',
-    `/20160918/availabilityDomains?compartmentId=${compartmentId}`
-  );
-  return response[0].name;
+  // Try API first, fallback to known AD
+  try {
+    const compartmentId = creds.compartment || creds.tenancy;
+    const response = await ociFetch(
+      creds, baseUrl, 'GET',
+      `/20160918/availabilityDomains?compartmentId=${compartmentId}`
+    );
+    return response[0].name;
+  } catch (e) {
+    onLog(`AD API failed (${e.message}), using default AD`);
+    return 'ffod:AP-SINGAPORE-1-AD-1';
+  }
 }
 
 /**
  * Get the latest Ubuntu image OCID.
  */
 async function getUbuntuImageId(creds, baseUrl, imageVersion, onLog) {
+  const osVersion = (imageVersion || '22.04').replace('Ubuntu ', '');
+  // operatingSystem is "Canonical Ubuntu", query with compartmentId
   const response = await ociFetch(
     creds, baseUrl, 'GET',
-    `/20160918/images?compartmentId=${creds.tenancy}&operatingSystem=Ubuntu&operatingSystemVersion=${imageVersion.replace('Ubuntu ', '')}&shape=VM.Standard.E2.1.Micro&sortBy=timeCreated&sortOrder=DESC`
+    `/20160918/images?compartmentId=${creds.tenancy}&operatingSystem=Canonical Ubuntu&operatingSystemVersion=${osVersion}&sortBy=timeCreated&sortOrder=DESC`
   );
 
   if (!response || response.length === 0) {
@@ -272,20 +283,20 @@ async function waitForFlowKitReady(publicIp, onLog) {
  */
 async function ociFetch(creds, baseUrl, method, path, body = null) {
   const url = `${baseUrl}${path}`;
+  const now = new Date().toUTCString();
   const headers = {
-    'Content-Type': 'application/json',
     'Host': new URL(url).host,
-    'Date': new Date().toUTCString(),
-    'x-date': new Date().toUTCString(),
+    'Date': now,
   };
 
-  if (body) {
-    headers['Content-Length'] = JSON.stringify(body).length.toString();
+  if (method !== 'GET' && body) {
+    headers['Content-Type'] = 'application/json';
+    headers['Content-Length'] = new TextEncoder().encode(JSON.stringify(body)).byteLength.toString();
   }
 
   // Sign the request
   const signature = await signOCIRequest(creds, method, path, headers);
-  headers['Authorization'] = `Signature version="1",keyId="${creds.tenancy}/${creds.user}/${creds.fingerprint}",algorithm="rsa-sha256",headers="${Object.keys(headers).join(' ')}",signature="${signature}"`;
+  headers['Authorization'] = `Signature version="1",keyId="${creds.tenancy}/${creds.user}/${creds.fingerprint}",algorithm="rsa-sha256",headers="(request-target) host date",signature="${signature}"`;
 
   const options = {
     method,
@@ -308,54 +319,37 @@ async function ociFetch(creds, baseUrl, method, path, body = null) {
  * Uses Web Crypto API (available in Cloudflare Workers).
  */
 async function signOCIRequest(creds, method, path, headers) {
-  // Build signing string
-  const signingParts = [];
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase().startsWith('x-') || key.toLowerCase() === 'date' || key.toLowerCase() === 'host') {
-      signingParts.push(`${key.toLowerCase()}:${headers[key]}`);
-    }
-  }
+  const signingString = [
+    `(request-target): ${method.toLowerCase()} ${path}`,
+    `host: ${headers['Host']}`,
+    `date: ${headers['Date']}`
+  ].join('\n');
 
-  const signingString = `${method}\n${path}\n\n${signingParts.join('\n')}\n`;
+  // Import private key using jose to get a CryptoKey, then export PKCS8 and re-import for raw signing
+  const privateKey = await jose.importPKCS8(creds.privateKey, 'RS256', true);
 
-  // Import private key
-  const pemKey = creds.privateKey;
-  const binaryKey = pemToBinary(pemKey);
-
+  // Export the key as JWK, then re-import for raw Web Crypto signing
+  const jwk = await jose.exportJWK(privateKey);
   const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    binaryKey,
+    'jwk',
+    jwk,
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
     false,
     ['sign']
   );
 
-  // Sign
-  const signature = await crypto.subtle.sign(
+  const rawSig = await crypto.subtle.sign(
     'RSASSA-PKCS1-v1_5',
     cryptoKey,
     new TextEncoder().encode(signingString)
   );
 
-  // Base64 encode
-  return btoa(String.fromCharCode(...new Uint8Array(signature)));
-}
-
-/**
- * Convert PEM private key to binary.
- */
-function pemToBinary(pem) {
-  const base64 = pem
-    .replace(/-----BEGIN [^-]+-----/, '')
-    .replace(/-----END [^-]+-----/, '')
-    .replace(/\s/g, '');
-
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+  const sigArray = new Uint8Array(rawSig);
+  let binary = '';
+  for (let i = 0; i < sigArray.length; i++) {
+    binary += String.fromCharCode(sigArray[i]);
   }
-  return bytes;
+  return btoa(binary);
 }
 
 function generateOracleUserData() {

@@ -53,3 +53,7 @@ mon_*.py
 # Temp
 *.tar.gz
 tmp/
+
+# Terraform
+terraform/oracle/terraform.tfvars
+terraform/oracle/.terraform/
