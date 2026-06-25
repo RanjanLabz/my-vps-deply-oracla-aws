@@ -78,8 +78,12 @@
             <li>Navigate to your Downloads folder: <code>cd ~/Downloads</code></li>
             <li>Run: <code>powershell -ExecutionPolicy Bypass -File flowkit-deploy.ps1</code></li>
             <li>Copy the <strong>Worker URL</strong> from the output</li>
-            <li>Paste it in the field below and click <strong>"Save URL"</strong></li>
+            <li><strong>Enable public access:</strong> Go to <a href="https://dash.cloudflare.com" target="_blank">dash.cloudflare.com</a> → <strong>Workers & Pages</strong> → click your worker → <strong>Settings</strong> tab → scroll to <strong>Domains & Routes</strong> → click <strong>Add</strong> → select <strong>"Workers.dev subdomain"</strong> → confirm</li>
+            <li>Paste the worker URL in the field below and click <strong>"Save URL"</strong></li>
           </ol>
+          <div class="hint-box">
+            <strong>Note:</strong> The worker won't be publicly accessible until you enable the workers.dev subdomain in step 5. This is a one-time setup per Cloudflare account.
+          </div>
         </div>
 
         <div class="script-header" style="margin-top:1rem">

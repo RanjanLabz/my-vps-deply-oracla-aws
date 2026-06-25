@@ -588,6 +588,19 @@ body {
   border-radius: 3px;
   font-size: 0.8rem;
 }
+.hint-box {
+  background: var(--bg-input);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.hint-box strong {
+  color: var(--warning);
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
