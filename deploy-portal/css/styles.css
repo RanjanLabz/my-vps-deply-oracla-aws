@@ -445,10 +445,10 @@ body {
 /* Worker status */
 .worker-status {
   background: var(--bg-primary);
-  border: 1px solid var(--border);
+  border: 1px solid var(--success);
   border-radius: 8px;
   padding: 1rem;
-  margin-bottom: 1rem;
+  margin-top: 1rem;
 }
 .status-row {
   display: flex;
@@ -487,6 +487,92 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 0.375rem;
+}
+
+/* Script area */
+.worker-script-area {
+  margin-top: 1.25rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+.script-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.script-header h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.btn-copy-script {
+  padding: 0.4rem 0.75rem;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-copy-script:hover {
+  background: var(--accent-hover);
+}
+.script-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  overflow-x: auto;
+  max-height: 250px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+.script-block code {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--accent);
+  white-space: pre;
+  line-height: 1.6;
+}
+.script-instructions {
+  margin-bottom: 1rem;
+}
+.script-instructions h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.script-instructions ol {
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.8;
+}
+.script-instructions code {
+  background: var(--bg-input);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+}
+.url-input {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--mono);
+  outline: none;
+}
+.url-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 /* Scrollbar */

@@ -3,8 +3,14 @@
 // ============================================================
 // Configuration
 // ============================================================
-const WORKER_URL = window.DEPLOY_CONFIG?.WORKER_URL || '';
+const WORKER_URL = window.DEPLOY_CONFIG?.WORKER_URL || localStorage.getItem('flowkit_worker_url') || '';
 let currentProvider = 'worker';
+
+// Restore saved worker URL into config
+if (WORKER_URL) {
+  window.DEPLOY_CONFIG = window.DEPLOY_CONFIG || {};
+  window.DEPLOY_CONFIG.WORKER_URL = WORKER_URL;
+}
 
 // ============================================================
 // Tab Switching
@@ -51,9 +57,9 @@ document.getElementById('form-existing').addEventListener('submit', (e) => {
 });
 
 // ============================================================
-// Worker Deployment (via Cloudflare API)
+// Worker Deployment (generate console script)
 // ============================================================
-async function deployWorker() {
+function deployWorker() {
   const accountId = document.getElementById('cf-account-id').value.trim();
   const apiToken = document.getElementById('cf-api-token').value.trim();
   const workerName = document.getElementById('cf-worker-name').value.trim() || 'flowkit-deploy';
@@ -63,153 +69,147 @@ async function deployWorker() {
     return;
   }
 
-  const btn = document.querySelector('#form-worker .btn-deploy');
-  const text = btn.querySelector('.btn-text');
-  const loader = btn.querySelector('.btn-loader');
-  btn.disabled = true;
-  text.hidden = true;
-  loader.hidden = false;
+  // Generate the console script
+  const script = generateDeployScript(accountId, apiToken, workerName);
 
-  const dot = document.getElementById('worker-dot');
-  const statusText = document.getElementById('worker-status-text');
-  const urlDisplay = document.getElementById('worker-url-display');
+  // Show script area
+  document.getElementById('worker-script-code').textContent = script;
+  document.getElementById('worker-script-area').hidden = false;
 
-  dot.className = 'status-dot deploying';
-  statusText.textContent = 'Deploying worker...';
-  urlDisplay.hidden = true;
+  // Scroll to script
+  document.getElementById('worker-script-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function generateDeployScript(accountId, apiToken, workerName) {
+  return `(async () => {
+  const ACCOUNT_ID = '${accountId}';
+  const API_TOKEN = '${apiToken}';
+  const WORKER_NAME = '${workerName}';
+  const KV_NAME = 'DEPLOY_JOBS';
+  const BUNDLE_URL = 'https://raw.githubusercontent.com/RanjanLabz/my-vps-deply-oracla-aws/main/workers/dist/bundle.js';
+  const API = 'https://api.cloudflare.com/client/v4';
+
+  const h = (token) => ({ 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' });
+  const log = (msg) => console.log('%c[FlowKit] ' + msg, 'color: #6366f1; font-weight: bold');
 
   try {
-    // Step 1: Verify credentials
-    statusText.textContent = 'Verifying Cloudflare credentials...';
-    const verifyRes = await fetch(`https://api.cloudflare.com/client/v4/accounts?page=1&per_page=5`, {
-      headers: { 'Authorization': `Bearer ${apiToken}` },
-    });
-    const verifyData = await verifyRes.json();
-    if (!verifyData.success) {
-      throw new Error('Invalid Cloudflare API token. Check your token has Workers Scripts:Edit and KV Storage:Edit permissions.');
+    log('Fetching worker script from GitHub...');
+    let scriptRes = await fetch(BUNDLE_URL);
+    if (!scriptRes.ok) throw new Error('Failed to fetch worker script from GitHub (HTTP ' + scriptRes.status + ')');
+    let scriptContent = await scriptRes.text();
+    log('Worker script loaded (' + scriptContent.length + ' bytes)');
+
+    log('Verifying credentials...');
+    let r = await fetch(API + '/accounts?page=1&per_page=5', { headers: h(API_TOKEN) });
+    let d = await r.json();
+    if (!d.success) throw new Error('Invalid API token: ' + d.errors?.map(e => e.message).join(', '));
+    log('Credentials OK');
+
+    log('Looking for KV namespace "' + KV_NAME + '"...');
+    let kvId = null, page = 1;
+    while (true) {
+      r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/kv/namespaces?page=' + page + '&per_page=100', { headers: h(API_TOKEN) });
+      d = await r.json();
+      if (!d.success) break;
+      const found = d.result.find(ns => ns.title === KV_NAME);
+      if (found) { kvId = found.id; break; }
+      if (!d.result_info || page >= d.result_info.total_pages) break;
+      page++;
     }
 
-    // Step 2: Ensure KV namespace
-    statusText.textContent = 'Ensuring KV namespace exists...';
-    let kvId = await findKVNamespace(accountId, apiToken, 'DEPLOY_JOBS');
     if (!kvId) {
-      const createRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/kv/namespaces`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: 'DEPLOY_JOBS' }),
+      log('Creating KV namespace...');
+      r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/kv/namespaces', {
+        method: 'POST', headers: h(API_TOKEN),
+        body: JSON.stringify({ title: KV_NAME })
       });
-      const createData = await createRes.json();
-      if (!createData.success) {
-        throw new Error('Failed to create KV namespace: ' + (createData.errors?.map(e => e.message).join(', ') || 'Unknown error'));
-      }
-      kvId = createData.result.id;
-    }
-    statusText.textContent = `KV namespace ready: ${kvId}`;
-
-    // Step 3: Upload worker with KV binding
-    statusText.textContent = 'Uploading worker script...';
-    let scriptContent;
-    try {
-      const scriptRes = await fetch('https://raw.githubusercontent.com/RanjanLabz/my-vps-deply-oracla-aws/main/workers/dist/bundle.js');
-      if (scriptRes.ok) {
-        scriptContent = await scriptRes.text();
-      } else {
-        scriptContent = getInlineWorkerScript();
-      }
-    } catch (e) {
-      scriptContent = getInlineWorkerScript();
+      d = await r.json();
+      if (!d.success) throw new Error('KV create failed: ' + d.errors?.map(e => e.message).join(', '));
+      kvId = d.result.id;
+      log('KV created: ' + kvId);
+    } else {
+      log('KV found: ' + kvId);
     }
 
+    log('Uploading worker...');
     const metadata = {
       main_module: 'index.js',
       compatibility_date: '2024-01-01',
-      bindings: [
-        {
-          type: 'kv_namespace',
-          name: 'DEPLOY_JOBS',
-          namespace_id: kvId,
-        },
-      ],
+      bindings: [{ type: 'kv_namespace', name: 'DEPLOY_JOBS', namespace_id: kvId }]
     };
-
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
     form.append('index.js', new Blob([scriptContent], { type: 'application/javascript+module' }), 'index.js');
 
-    const uploadRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${apiToken}` },
-      body: form,
+    r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/scripts/' + WORKER_NAME, {
+      method: 'PUT', headers: { 'Authorization': 'Bearer ' + API_TOKEN }, body: form
     });
-    const uploadData = await uploadRes.json();
-    if (!uploadData.success) {
-      throw new Error('Failed to upload worker: ' + (uploadData.errors?.map(e => e.message).join(', ') || 'Unknown error'));
-    }
-    statusText.textContent = 'Worker script uploaded!';
+    d = await r.json();
+    if (!d.success) throw new Error('Upload failed: ' + d.errors?.map(e => e.message).join(', '));
+    log('Worker uploaded!');
 
-    // Step 4: Get worker URL
-    statusText.textContent = 'Getting worker URL...';
-    const subdomainRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain`, {
-      headers: { 'Authorization': `Bearer ${apiToken}` },
-    });
-    const subdomainData = await subdomainRes.json();
-
-    let workerUrl;
-    if (subdomainData.success && subdomainData.result?.subdomain) {
-      workerUrl = `https://${workerName}.${subdomainData.result.subdomain}.workers.dev`;
-    } else {
-      workerUrl = `https://${workerName}.workers.dev`;
+    log('Getting worker URL...');
+    r = await fetch(API + '/accounts/' + ACCOUNT_ID + '/workers/subdomain', { headers: h(API_TOKEN) });
+    d = await r.json();
+    let workerUrl = 'https://' + WORKER_NAME + '.workers.dev';
+    if (d.success && d.result?.subdomain) {
+      workerUrl = 'https://' + WORKER_NAME + '.' + d.result.subdomain + '.workers.dev';
     }
 
-    // Step 5: Test health
-    statusText.textContent = 'Testing worker health...';
+    log('Testing worker...');
     try {
-      const healthRes = await fetch(`${workerUrl}/api/health`, { signal: AbortSignal.timeout(10000) });
-      if (healthRes.ok) {
-        statusText.textContent = 'Worker is healthy and ready!';
-      } else {
-        statusText.textContent = 'Worker deployed (health check returned ' + healthRes.status + ')';
-      }
+      r = await fetch(workerUrl + '/api/health', { signal: AbortSignal.timeout(10000) });
+      if (r.ok) log('Worker is healthy!');
+      else log('Health check returned ' + r.status);
     } catch (e) {
-      statusText.textContent = 'Worker deployed (health check pending — may take a few seconds)';
+      log('Health check pending (may take a few seconds)');
     }
 
-    // Show URL
-    dot.className = 'status-dot active';
-    urlDisplay.hidden = false;
-    document.getElementById('worker-url-text').textContent = workerUrl;
-
-    // Save to config.js
-    statusText.textContent = `Done! Worker URL: ${workerUrl}`;
+    console.log('%c\\n========================================', 'color: #22c55e');
+    console.log('%c  WORKER URL (copy this):', 'color: #22c55e; font-weight: bold; font-size: 14px');
+    console.log('%c  ' + workerUrl, 'color: #22c55e; font-size: 14px; font-weight: bold');
+    console.log('%c========================================\\n', 'color: #22c55e');
+    console.log('%cPaste this URL in the deploy portal and click "Save URL".', 'color: #8888a0');
 
   } catch (err) {
-    dot.className = 'status-dot';
-    statusText.textContent = 'Deployment failed: ' + err.message;
-    alert('Worker deployment failed: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    text.hidden = false;
-    loader.hidden = true;
+    console.error('%c[FlowKit] ERROR: ' + err.message, 'color: #ef4444; font-weight: bold');
   }
+})();`;
 }
 
-async function findKVNamespace(accountId, apiToken, name) {
-  let page = 1;
-  while (true) {
-    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/kv/namespaces?page=${page}&per_page=100`, {
-      headers: { 'Authorization': `Bearer ${apiToken}` },
-    });
-    const data = await res.json();
-    if (!data.success) break;
-    const found = data.result.find(ns => ns.title === name);
-    if (found) return found.id;
-    if (!data.result_info || page >= data.result_info.total_pages) break;
-    page++;
+function copyScript() {
+  const code = document.getElementById('worker-script-code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.querySelector('.btn-copy-script');
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = original; }, 2000);
+  });
+}
+
+function saveWorkerUrl() {
+  const url = document.getElementById('worker-url-input').value.trim();
+  if (!url) {
+    alert('Paste the worker URL from the console output');
+    return;
   }
-  return null;
+  if (!url.includes('workers.dev')) {
+    alert('Invalid worker URL. It should end with .workers.dev');
+    return;
+  }
+
+  // Save to localStorage for persistence
+  localStorage.setItem('flowkit_worker_url', url);
+
+  // Update config.js reference
+  window.DEPLOY_CONFIG = window.DEPLOY_CONFIG || {};
+  window.DEPLOY_CONFIG.WORKER_URL = url;
+
+  // Show success status
+  document.getElementById('worker-status').hidden = false;
+  document.getElementById('worker-url-text').textContent = url;
+
+  alert('Worker URL saved! You can now use the Oracle Cloud or AWS tabs.');
 }
 
 // ============================================================
@@ -218,8 +218,9 @@ async function findKVNamespace(accountId, apiToken, name) {
 async function startDeploy(provider) {
   const credentials = getCredentials(provider);
 
-  // Check worker URL is configured
-  if (!WORKER_URL) {
+  // Check worker URL is configured (check dynamically from config or localStorage)
+  const workerUrl = window.DEPLOY_CONFIG?.WORKER_URL || localStorage.getItem('flowkit_worker_url') || '';
+  if (!workerUrl) {
     alert('Deployment backend not configured. Deploy the Cloudflare Worker first using the "Setup Worker" tab.');
     return;
   }
@@ -237,7 +238,7 @@ async function startDeploy(provider) {
   setLoading(provider, true);
 
   try {
-    const response = await fetch(`${WORKER_URL}/api/deploy`, {
+    const response = await fetch(`${workerUrl}/api/deploy`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider, credentials }),
@@ -462,17 +463,4 @@ function copyText(elementId) {
 
 function showDocs() {
   alert('Documentation coming soon!');
-}
-
-// ============================================================
-// Inline Worker Script (fallback if bundle.js not found)
-// ============================================================
-function getInlineWorkerScript() {
-  return `const CORS_HEADERS={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'};
-export default{async fetch(request,env,ctx){if(request.method==='OPTIONS')return new Response(null,{status:204,headers:CORS_HEADERS});const url=new URL(request.url);if(request.method==='GET'&&url.pathname==='/api/health')return new Response(JSON.stringify({status:'ok',timestamp:Date.now()}),{headers:{'Content-Type':'application/json',...CORS_HEADERS}});if(request.method==='POST'&&url.pathname==='/api/deploy')return handleDeploy(request,env,ctx);if(request.method==='GET'&&url.pathname.startsWith('/api/status/')){const jobId=url.pathname.split('/').pop();const job=await env.DEPLOY_JOBS?.get('job:'+jobId,{type:'json'});if(!job)return new Response(JSON.stringify({message:'Not found'}),{status:404,headers:{'Content-Type':'application/json',...CORS_HEADERS}});return new Response(JSON.stringify(job),{headers:{'Content-Type':'application/json',...CORS_HEADERS}});}return new Response('Not Found',{status:404,headers:CORS_HEADERS})}};
-async function handleDeploy(request,env,ctx){let body;try{body=await request.json()}catch{return new Response(JSON.stringify({message:'Invalid JSON'}),{status:400,headers:{'Content-Type':'application/json',...CORS_HEADERS}});}const{provider,credentials}=body;const ip=request.headers.get('cf-connecting-ip')||'unknown';const rl=await checkRateLimit(env,ip);if(!rl.allowed)return new Response(JSON.stringify({message:'Rate limited'}),{status:429,headers:{'Content-Type':'application/json',...CORS_HEADERS}});const{readable,writable}=new TransformStream();const writer=writable.getWriter();const enc=new TextEncoder();const send=async(d)=>{try{await writer.write(enc.encode('data: '+JSON.stringify(d)+'\\n\\n'))}catch{}};ctx.waitUntil((async()=>{try{if(provider==='oracle'){send({type:'log',message:'Starting Oracle deployment...',level:'step'});const result=await createOracleInstance(credentials,(m,l)=>send({type:'log',message:String(m).replace(/[\\r\\n]+/g,' ').substring(0,500),level:l||'info'}));send({type:'success',vpsIp:result.publicIp,instanceId:result.instanceId,authToken:generateToken()});}else if(provider==='aws'){send({type:'log',message:'Starting AWS deployment...',level:'step'});const result=await createAWSInstance(credentials,(m,l)=>send({type:'log',message:String(m).replace(/[\\r\\n]+/g,' ').substring(0,500),level:l||'info'}));send({type:'success',vpsIp:result.publicIp,instanceId:result.instanceId,authToken:generateToken()});}else if(provider==='existing'){send({type:'log',message:'Generate install command',level:'step'});send({type:'success',vpsIp:credentials.ip,authToken:'Run the command'});}}catch(err){send({type:'error',message:err.message})}finally{await writer.close()}})());return new Response(readable,{status:200,headers:{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive',...CORS_HEADERS}});}
-function generateToken(){const b=new Uint8Array(32);crypto.getRandomValues(b);return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join('')}
-async function checkRateLimit(env,ip){if(!env.DEPLOY_JOBS)return{allowed:true};return{allowed:true}}
-async function createOracleInstance(creds,onLog){onLog('Oracle deployment not available in inline mode');throw new Error('Please deploy the full worker via the Setup Worker tab')}
-async function createAWSInstance(creds,onLog){onLog('AWS deployment not available in inline mode');throw new Error('Please deploy the full worker via the Setup Worker tab')}`;
 }

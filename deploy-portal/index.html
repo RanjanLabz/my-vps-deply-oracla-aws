@@ -65,12 +65,44 @@
         <span class="hint">Default: <code>flowkit-deploy</code> — will be available at <code>https://flowkit-deploy.YOUR_SUBDOMAIN.workers.dev</code></span>
       </div>
 
-      <div class="worker-status" id="worker-status">
-        <div class="status-row">
-          <span class="status-dot" id="worker-dot"></span>
-          <span id="worker-status-text">Worker not deployed</span>
+      <button type="submit" class="btn-deploy">
+        <span class="btn-text">Generate Deploy Script</span>
+      </button>
+
+      <!-- Script output area (hidden by default) -->
+      <div id="worker-script-area" class="worker-script-area" hidden>
+        <div class="script-header">
+          <h3>Step 1: Copy this script</h3>
+          <button type="button" class="btn-copy-script" onclick="copyScript()">Copy Script</button>
         </div>
-        <div id="worker-url-display" class="worker-url" hidden>
+        <pre class="script-block"><code id="worker-script-code"></code></pre>
+
+        <div class="script-instructions">
+          <h3>Step 2: Run it</h3>
+          <ol>
+            <li>Open <a href="https://dash.cloudflare.com" target="_blank">dash.cloudflare.com</a> in a new tab</li>
+            <li>Press <code>F12</code> to open DevTools</li>
+            <li>Go to <strong>Console</strong> tab</li>
+            <li>Paste the script and press <strong>Enter</strong></li>
+            <li>Copy the worker URL from the output</li>
+          </ol>
+        </div>
+
+        <div class="script-header" style="margin-top:1rem">
+          <h3>Step 3: Paste the worker URL</h3>
+        </div>
+        <div class="copy-group">
+          <input type="text" id="worker-url-input" placeholder="https://flowkit-deploy.YOUR_SUBDOMAIN.workers.dev" class="url-input">
+          <button type="button" class="btn-copy" onclick="saveWorkerUrl()">Save URL</button>
+        </div>
+      </div>
+
+      <div class="worker-status" id="worker-status" hidden>
+        <div class="status-row">
+          <span class="status-dot active" id="worker-dot"></span>
+          <span id="worker-status-text">Worker ready!</span>
+        </div>
+        <div class="worker-url">
           <label>Worker URL</label>
           <div class="copy-group">
             <code id="worker-url-text"></code>
@@ -78,14 +110,6 @@
           </div>
         </div>
       </div>
-
-      <button type="submit" class="btn-deploy">
-        <span class="btn-text">Deploy Worker</span>
-        <span class="btn-loader" hidden>
-          <svg class="spinner" width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>
-          Deploying...
-        </span>
-      </button>
     </form>
 
     <!-- Oracle Cloud Form -->
