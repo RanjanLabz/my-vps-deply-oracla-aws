@@ -89,8 +89,7 @@ function deployWorker() {
 
 function generateDeployScript(accountId, apiToken, workerName) {
   return `# FlowKit Worker Deploy Script
-# Run this in PowerShell: Right-click > "Run with PowerShell"
-# Or: powershell -ExecutionPolicy Bypass -File flowkit-deploy.ps1
+# Run: powershell -ExecutionPolicy Bypass -File flowkit-deploy.ps1
 
 $ErrorActionPreference = "Stop"
 $ACCOUNT_ID = "${accountId}"
@@ -99,95 +98,78 @@ $WORKER_NAME = "${workerName}"
 $KV_NAME = "DEPLOY_JOBS"
 $BUNDLE_URL = "https://raw.githubusercontent.com/RanjanLabz/my-vps-deply-oracla-aws/main/workers/dist/bundle.js"
 $API = "https://api.cloudflare.com/client/v4"
+$authHeader = "Bearer $API_TOKEN"
 
 Write-Host ""
 Write-Host "=== FlowKit Worker Deploy ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Step 1: Fetch worker script
-Write-Host "[1/5] Fetching worker script from GitHub..." -ForegroundColor Yellow
+# Step 1: Fetch worker script from GitHub
+Write-Host "[1/5] Fetching worker script..." -ForegroundColor Yellow
 $scriptContent = Invoke-RestMethod -Uri $BUNDLE_URL -Method Get
-Write-Host "  Script loaded ($($scriptContent.Length) bytes)" -ForegroundColor Green
+Write-Host "  OK ($($scriptContent.Length) bytes)" -ForegroundColor Green
 
 # Step 2: Verify credentials
 Write-Host "[2/5] Verifying credentials..." -ForegroundColor Yellow
-$headers = @{ "Authorization" = "Bearer $API_TOKEN"; "Content-Type" = "application/json" }
-try {
-    $accounts = Invoke-RestMethod -Uri "$API/accounts?page=1&per_page=5" -Headers $headers -Method Get
-    if (-not $accounts.success) { throw "Invalid token" }
-    Write-Host "  Credentials OK" -ForegroundColor Green
-} catch {
-    Write-Host "  ERROR: Invalid API token! $_" -ForegroundColor Red
-    exit 1
-}
+$accounts = Invoke-RestMethod -Uri "$API/accounts?page=1&per_page=5" -Headers @{ Authorization = $authHeader }
+if (-not $accounts.success) { throw "Invalid API token" }
+Write-Host "  OK" -ForegroundColor Green
 
 # Step 3: Find or create KV namespace
 Write-Host "[3/5] Setting up KV namespace..." -ForegroundColor Yellow
 $kvId = $null
-$page = 1
-while ($true) {
-    $kvRes = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces?page=$page&per_page=100" -Headers $headers -Method Get
-    if (-not $kvRes.success) { break }
-    $found = $kvRes.result | Where-Object { $_.title -eq $KV_NAME }
-    if ($found) { $kvId = $found.id; break }
-    if ($page -ge $kvRes.result_info.total_pages) { break }
-    $page++
-}
+try {
+    $kvList = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces?page=1&per_page=100" -Headers @{ Authorization = $authHeader }
+    $found = $kvList.result | Where-Object { $_.title -eq $KV_NAME }
+    if ($found) { $kvId = $found.id }
+} catch { }
 
 if (-not $kvId) {
-    Write-Host "  Creating KV namespace..." -ForegroundColor Yellow
-    $kvCreate = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces" -Headers $headers -Method Post -Body (@{ title = $KV_NAME } | ConvertTo-Json)
-    if (-not $kvCreate.success) { throw "KV create failed: $($kvCreate.errors)" }
+    $kvCreate = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/kv/namespaces" -Headers @{ Authorization = $authHeader; "Content-Type" = "application/json" } -Method Post -Body (@{ title = $KV_NAME } | ConvertTo-Json)
+    if (-not $kvCreate.success) { throw "KV create failed" }
     $kvId = $kvCreate.result.id
-    Write-Host "  KV created: $kvId" -ForegroundColor Green
+    Write-Host "  Created: $kvId" -ForegroundColor Green
 } else {
-    Write-Host "  KV found: $kvId" -ForegroundColor Green
+    Write-Host "  Found: $kvId" -ForegroundColor Green
 }
 
-# Step 4: Upload worker
-Write-Host "[4/5] Uploading worker script..." -ForegroundColor Yellow
-$metadata = @{
-    main_module = "index.js"
-    compatibility_date = "2024-01-01"
-    bindings = @(@{ type = "kv_namespace"; name = "DEPLOY_JOBS"; namespace_id = $kvId })
-} | ConvertTo-Json -Depth 3
+# Step 4: Upload worker script
+Write-Host "[4/5] Uploading worker..." -ForegroundColor Yellow
+$metadata = @{ main_module = "index.js"; compatibility_date = "2024-01-01"; bindings = @(@{ type = "kv_namespace"; name = "DEPLOY_JOBS"; namespace_id = $kvId }) } | ConvertTo-Json -Depth 3
 
-$boundary = [System.Guid]::NewGuid().ToString()
-$LF = "\`r\`n"
-$bodyLines = @(
-    "--$boundary",
-    "Content-Disposition: form-data; name=\`"metadata\`"",
-    "Content-Type: application/json",
-    "",
-    $metadata,
-    "--$boundary",
-    "Content-Disposition: form-data; name=\`"index.js\`"; filename=\`"index.js\`"",
-    "Content-Type: application/javascript+module",
-    "",
-    $scriptContent,
-    "--$boundary--"
-) -join $LF
+$metadataFile = Join-Path $env:TEMP "flowkit-meta.json"
+$scriptFile = Join-Path $env:TEMP "flowkit-worker.js"
+$metadata | Out-File -FilePath $metadataFile -Encoding utf8 -NoNewline
+$scriptContent | Out-File -FilePath $scriptFile -Encoding utf8 -NoNewline
 
-$uploadHeaders = @{ "Authorization" = "Bearer $API_TOKEN"; "Content-Type" = "multipart/form-data; boundary=$boundary" }
-$uploadRes = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME" -Headers $uploadHeaders -Method Put -Body $bodyLines
-if (-not $uploadRes.success) { throw "Upload failed: $($uploadRes.errors)" }
-Write-Host "  Worker uploaded!" -ForegroundColor Green
+$form = @{
+    metadata = Get-Item $metadataFile
+    "index.js" = Get-Item $scriptFile
+}
+$uploadRes = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/scripts/$WORKER_NAME" -Headers @{ Authorization = $authHeader } -Method Put -Form $form
+if (-not $uploadRes.success) { throw "Upload failed: $($uploadRes.errors.message)" }
+Write-Host "  OK" -ForegroundColor Green
+
+Remove-Item $metadataFile -ErrorAction SilentlyContinue
+Remove-Item $scriptFile -ErrorAction SilentlyContinue
 
 # Step 5: Get worker URL
 Write-Host "[5/5] Getting worker URL..." -ForegroundColor Yellow
-$subRes = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/subdomain" -Headers $headers -Method Get
 $workerUrl = "https://$WORKER_NAME.workers.dev"
-if ($subRes.success -and $subRes.result.subdomain) {
-    $workerUrl = "https://$WORKER_NAME.$($subRes.result.subdomain).workers.dev"
-}
+try {
+    $subRes = Invoke-RestMethod -Uri "$API/accounts/$ACCOUNT_ID/workers/subdomain" -Headers @{ Authorization = $authHeader }
+    if ($subRes.success -and $subRes.result.subdomain) {
+        $workerUrl = "https://$WORKER_NAME.$($subRes.result.subdomain).workers.dev"
+    }
+} catch { }
 
 # Test health
 Write-Host "  Testing worker..." -ForegroundColor Yellow
 try {
-    $health = Invoke-RestMethod -Uri "$workerUrl/api/health" -Method Get -TimeoutSec 10
-    Write-Host "  Worker is healthy!" -ForegroundColor Green
+    $health = Invoke-RestMethod -Uri "$workerUrl/api/health" -Method Get
+    Write-Host "  Healthy!" -ForegroundColor Green
 } catch {
-    Write-Host "  Health check pending (may take a few seconds)" -ForegroundColor Yellow
+    Write-Host "  Pending (wait a few seconds)" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -199,9 +181,7 @@ Write-Host ""
 Write-Host "Copy this URL and paste it in the deploy portal, then click Save URL." -ForegroundColor Cyan
 Write-Host ""
 
-# Copy to clipboard automatically
-$workerUrl | Set-Clipboard
-Write-Host "URL copied to clipboard!" -ForegroundColor Green
+try { $workerUrl | Set-Clipboard; Write-Host "URL copied to clipboard!" -ForegroundColor Green } catch { }
 Write-Host ""
 Read-Host "Press Enter to exit"
 `;
