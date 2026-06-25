@@ -6,7 +6,7 @@ apt-get update -y
 apt-get upgrade -y
 
 # Install dependencies
-apt-get install -y curl wget git unzip xvfb
+apt-get install -y curl wget git unzip xvfb iptables-persistent
 
 # Install Node.js 20
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -17,6 +17,12 @@ apt-get install -y python3 python3-pip python3-venv
 
 # Install Chromium
 apt-get install -y chromium-browser
+
+# Open firewall ports
+iptables -I INPUT 4 -p tcp --dport 8100 -j ACCEPT
+iptables -I INPUT 5 -p tcp --dport 9222 -j ACCEPT
+iptables -I INPUT 6 -p tcp --dport 3000 -j ACCEPT
+netfilter-persistent save
 
 # Create flowkit user
 useradd -m -s /bin/bash flowkit || true
@@ -60,13 +66,14 @@ cat > /etc/systemd/system/flowkit-backend.service << 'EOF'
 [Unit]
 Description=Flow Kit Backend
 After=network.target xvfb.service
+Requires=xvfb.service
 
 [Service]
 Type=simple
 User=flowkit
 WorkingDirectory=/home/flowkit/flowkit
 Environment=DISPLAY=:99
-ExecStartPre=/usr/bin/systemctl start xvfb
+EnvironmentFile=/home/flowkit/flowkit/.env
 ExecStart=/home/flowkit/flowkit/venv/bin/python -m agent.main
 Restart=always
 RestartSec=5
