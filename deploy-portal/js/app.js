@@ -3,7 +3,7 @@
 // ============================================================
 // Configuration
 // ============================================================
-const WORKER_URL = 'https://deploy.flowkit.workers.dev'; // Your Cloudflare Worker URL
+const WORKER_URL = window.DEPLOY_CONFIG?.WORKER_URL || '';
 let currentProvider = 'oracle';
 
 // ============================================================
@@ -50,6 +50,12 @@ document.getElementById('form-existing').addEventListener('submit', (e) => {
 // ============================================================
 async function startDeploy(provider) {
   const credentials = getCredentials(provider);
+
+  // Check worker URL is configured
+  if (!WORKER_URL) {
+    alert('Deployment backend not configured. The Cloudflare Worker URL needs to be set in config.js first.');
+    return;
+  }
 
   // Validate
   const error = validateCredentials(provider, credentials);
