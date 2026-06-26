@@ -162,7 +162,7 @@ async def flow_debug():
 
         requests.append(r)
 
-    # Active Chrome sessions
+    # Active Chrome sessions (from CDPClient + Chrome Manager)
     sessions = []
     for sid, sess in cdp._sessions.items():
         sessions.append({
@@ -174,6 +174,30 @@ async def flow_debug():
             "has_token": sess.bearer_token is not None,
             "uptime_s": int(__import__("time").time() - sess.created_at) if sess.created_at else 0,
         })
+
+    # Also query Chrome Manager for instances
+    try:
+        from agent.config import CHROME_MANAGER_URL
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as hc:
+            resp = await hc.get(f"{CHROME_MANAGER_URL}/chrome")
+            if resp.status_code == 200:
+                for ci in resp.json().get("instances", []):
+                    cm_sid = ci.get("session_id", "")
+                    if any(s["session_id"] == cm_sid for s in sessions):
+                        continue
+                    cm_acct = ci.get("account_id", "default")
+                    sessions.append({
+                        "session_id": cm_sid,
+                        "account_id": cm_acct,
+                        "account_name": accounts.get(cm_acct, {}).get("name", cm_acct[:12] if cm_acct else "?"),
+                        "pid": ci.get("pid", 0),
+                        "status": ci.get("status", "UNKNOWN"),
+                        "has_token": False,
+                        "uptime_s": ci.get("uptime", 0),
+                    })
+    except Exception:
+        pass
 
     # Queue stats
     try:
