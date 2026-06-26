@@ -293,6 +293,17 @@ async def list_profiles():
                     cm_busy = _match_busy(cm_acct)
                     cm_uptime = ci.get("uptime", 0)
                     cm_auto_close = max(0, CHROME_IDLE_TIMEOUT - cm_uptime)
+                    # Check if CDPClient has an active session with token for this account
+                    cm_has_token = False
+                    try:
+                        from agent.services.cdp_client import get_cdp_client as _get_cdp2
+                        _cdp2 = _get_cdp2()
+                        for _sess in _cdp2._sessions.values():
+                            if _sess.account_id == cm_acct and _sess.bearer_token:
+                                cm_has_token = True
+                                break
+                    except Exception:
+                        pass
                     profiles.append({
                         "session_id": cm_sid,
                         "account_id": cm_acct[:12] if cm_acct else "?",
@@ -300,7 +311,7 @@ async def list_profiles():
                         "site": ci.get("site", "labs.google"),
                         "pid": cm_pid,
                         "status": ci.get("status", "UNKNOWN"),
-                        "has_token": False,
+                        "has_token": cm_has_token,
                         "uptime_s": cm_uptime,
                         "created_at": now - cm_uptime,
                         "is_busy": cm_in_use > 0 or cm_busy is not None,

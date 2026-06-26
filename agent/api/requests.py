@@ -193,7 +193,7 @@ async def flow_debug():
                         "account_name": accounts.get(cm_acct, {}).get("name", cm_acct[:12] if cm_acct else "?"),
                         "pid": ci.get("pid", 0),
                         "status": ci.get("status", "UNKNOWN"),
-                        "has_token": False,
+                        "has_token": any(s.account_id == cm_acct and s.bearer_token for s in cdp._sessions.values()),
                         "uptime_s": ci.get("uptime", 0),
                     })
     except Exception:
