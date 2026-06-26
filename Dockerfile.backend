@@ -14,8 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project files
 COPY agent/ /app/agent/
 COPY extension/ /app/extension/
-COPY tests/ /app/tests/
-COPY pytest.ini /app/
 
 # Create directories
 RUN mkdir -p /app/data /app/extension
