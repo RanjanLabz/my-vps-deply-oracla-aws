@@ -272,6 +272,46 @@ async def list_profiles():
     except ImportError:
         pass
 
+    # 3. Query Chrome Manager for instances not tracked by CDPClient
+    try:
+        from agent.config import CHROME_MANAGER_URL
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as hc:
+            resp = await hc.get(f"{CHROME_MANAGER_URL}/chrome")
+            if resp.status_code == 200:
+                cm_instances = resp.json().get("instances", [])
+                for ci in cm_instances:
+                    cm_sid = ci.get("session_id", "")
+                    cm_pid = ci.get("pid", 0)
+                    if cm_pid in tracked_pids:
+                        continue
+                    cm_acct = ci.get("account_id", "default")
+                    cm_account = accounts.get(cm_acct, {})
+                    cm_name = cm_account.get("name", cm_acct[:12] if cm_acct else "?")
+                    cm_in_use = cm_account.get("in_use", 0)
+                    cm_max = cm_account.get("max_count", 1)
+                    cm_busy = _match_busy(cm_acct)
+                    profiles.append({
+                        "session_id": cm_sid,
+                        "account_id": cm_acct[:12] if cm_acct else "?",
+                        "account_name": cm_name,
+                        "site": ci.get("site", "labs.google"),
+                        "pid": cm_pid,
+                        "status": ci.get("status", "UNKNOWN"),
+                        "has_token": False,
+                        "uptime_s": ci.get("uptime", 0),
+                        "created_at": now - ci.get("uptime", 0),
+                        "is_busy": cm_in_use > 0 or cm_busy is not None,
+                        "in_use": cm_in_use,
+                        "max_count": cm_max,
+                        "busy_request": cm_busy,
+                        "profile_dir": "",
+                        "is_orphaned": False,
+                        "auto_close_in": 0,
+                    })
+    except Exception:
+        pass
+
     return {
         "active_sessions": profiles,
         "active_count": len([p for p in profiles if not p["is_orphaned"]]),
