@@ -333,7 +333,11 @@ export default function FlowDebugPage() {
                 <span className="text-text-secondary font-medium">{s.account_name}</span>
                 <span className="text-text-muted font-mono">PID {s.pid}</span>
                 {s.has_token && <Zap size={10} className="text-accent-cyan" />}
+                {!s.has_token && <span className="text-accent-amber text-[10px]">Token pending</span>}
                 <span className="text-text-muted ml-auto">{s.uptime_s}s</span>
+                {s.auto_close_in > 0 && (
+                  <span className="text-accent-red text-[10px]">closing in {Math.floor(s.auto_close_in / 60)}m {s.auto_close_in % 60}s</span>
+                )}
               </div>
             ))}
           </div>

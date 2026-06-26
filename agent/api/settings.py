@@ -291,6 +291,8 @@ async def list_profiles():
                     cm_in_use = cm_account.get("in_use", 0)
                     cm_max = cm_account.get("max_count", 1)
                     cm_busy = _match_busy(cm_acct)
+                    cm_uptime = ci.get("uptime", 0)
+                    cm_auto_close = max(0, CHROME_IDLE_TIMEOUT - cm_uptime)
                     profiles.append({
                         "session_id": cm_sid,
                         "account_id": cm_acct[:12] if cm_acct else "?",
@@ -299,15 +301,15 @@ async def list_profiles():
                         "pid": cm_pid,
                         "status": ci.get("status", "UNKNOWN"),
                         "has_token": False,
-                        "uptime_s": ci.get("uptime", 0),
-                        "created_at": now - ci.get("uptime", 0),
+                        "uptime_s": cm_uptime,
+                        "created_at": now - cm_uptime,
                         "is_busy": cm_in_use > 0 or cm_busy is not None,
                         "in_use": cm_in_use,
                         "max_count": cm_max,
                         "busy_request": cm_busy,
                         "profile_dir": "",
                         "is_orphaned": False,
-                        "auto_close_in": 0,
+                        "auto_close_in": cm_auto_close,
                     })
     except Exception:
         pass
