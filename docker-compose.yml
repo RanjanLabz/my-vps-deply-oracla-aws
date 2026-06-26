@@ -19,6 +19,9 @@ services:
       - WS_HOST=0.0.0.0
       - WS_PORT=9222
       - CHROME_MANAGER_URL=http://flowkit-chrome:8200
+      - FLOW_DATA_DIR=/app/data
+    volumes:
+      - flowkit-db:/app/data
     networks:
       - flowkit-net
     depends_on:
@@ -70,3 +73,6 @@ services:
 networks:
   flowkit-net:
     driver: bridge
+
+volumes:
+  flowkit-db:
