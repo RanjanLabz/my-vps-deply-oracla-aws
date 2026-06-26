@@ -122,6 +122,7 @@ async def launch_chrome(req: LaunchRequest):
         "--disable-dev-shm-usage",
         "--no-sandbox",
         f"--remote-debugging-port={cdp_port}",
+        "--remote-debugging-address=0.0.0.0",
         "--remote-allow-origins=*",
     ]
     args.extend([f for f in CHROME_FLAGS if f])
