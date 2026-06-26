@@ -155,6 +155,61 @@ async def ensure_fresh_session(account: dict, timeout: float = 30.0, max_attempt
                 session = default_session
                 logger.info("Reassigned default Chrome (pid=%s) to account %s", session.pid, account_id[:8])
 
+        # If still no session, check Chrome Manager for existing instances (post-restart recovery)
+        if not session:
+            try:
+                from agent.config import CHROME_MANAGER_URL, CHROME_MANAGER_MAX_PROFILES
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as hc:
+                    resp = await hc.get(f"{CHROME_MANAGER_URL}/chrome")
+                    if resp.status_code == 200:
+                        cm_instances = resp.json().get("instances", [])
+                        for ci in cm_instances:
+                            cm_acct = ci.get("account_id", "")
+                            if cm_acct == account_id:
+                                cm_pid = ci.get("pid", 0)
+                                cm_port = ci.get("cdp_port", 0)
+                                cm_sid = ci.get("session_id", "")
+                                new_session = CDPSession(
+                                    session_id=cm_sid,
+                                    account_id=account_id,
+                                    site=ci.get("site", "labs.google"),
+                                    profile_dir="",
+                                    pid=cm_pid,
+                                    cdp_port=cm_port,
+                                )
+                                try:
+                                    # Connect via Chrome Manager CDP proxy
+                                    proxy_base = str(CHROME_MANAGER_URL).replace("http://", "").replace("https://", "")
+                                    import urllib.request
+                                    data = await asyncio.to_thread(
+                                        lambda: urllib.request.urlopen(
+                                            f"http://{proxy_base}/cdp/{cm_sid}/json", timeout=2
+                                        ).read()
+                                    )
+                                    targets = json.loads(data)
+                                    page = next(
+                                        (t for t in targets if t.get("type") == "page" and t.get("url", "").startswith("http")),
+                                        None,
+                                    )
+                                    if page is None:
+                                        page = next((t for t in targets if t.get("type") == "page"), None)
+                                    if page:
+                                        page_id = page.get("id", "")
+                                        debugger_url = f"ws://{proxy_base}/cdp/{cm_sid}/ws?target={page_id}"
+                                        driver = CDPDriver(debugger_url)
+                                        await asyncio.to_thread(driver.connect)
+                                        new_session.driver = driver
+                                        cdp._sessions[cm_pid] = new_session
+                                        session = new_session
+                                        logger.info("Re-adopted Chrome Manager instance pid=%d for account %s (port=%d)", cm_pid, account_id[:8], cm_port)
+                                        break
+                                except Exception as drv_e:
+                                    logger.warning("Failed to re-adopt CM instance pid=%d: %s", cm_pid, drv_e)
+                                    del new_session
+            except Exception as e:
+                logger.warning("ensure_fresh_session: CM recovery query failed: %s", e)
+
         # If still no session, launch a new Chrome instance
         if not session:
             try:
