@@ -268,30 +268,56 @@ async def cdp_proxy_http(session_id: str, path: str):
 
 @app.websocket("/cdp/{session_id}/ws")
 async def cdp_proxy_ws(websocket: WebSocket, session_id: str):
-    """Proxy WebSocket to Chrome's CDP WebSocket."""
+    """Proxy WebSocket to Chrome's CDP WebSocket.
+
+    Optional query param ?target=<page_id> connects to a specific page
+    target instead of the browser-level WebSocket. This is needed for
+    page-level CDP commands like Runtime.evaluate.
+    """
     inst = _find_instance(session_id)
 
-    # Get the browser WebSocket URL from Chrome
+    # Get target info from Chrome
     import urllib.request
     try:
-        version_data = await asyncio.to_thread(
-            lambda: urllib.request.urlopen(
-                f"http://127.0.0.1:{inst.cdp_port}/json/version", timeout=5
-            ).read()
-        )
-        version_info = json.loads(version_data)
-        browser_ws_url = version_info.get("webSocketDebuggerUrl", "")
+        target_id = websocket.query_params.get("target")
+
+        if target_id:
+            # Connect to a specific page target's WebSocket
+            pages_data = await asyncio.to_thread(
+                lambda: urllib.request.urlopen(
+                    f"http://127.0.0.1:{inst.cdp_port}/json", timeout=5
+                ).read()
+            )
+            targets = json.loads(pages_data)
+            target = next((t for t in targets if t.get("id") == target_id), None)
+            if not target:
+                await websocket.close(code=1011, reason=f"Target {target_id} not found")
+                return
+            chrome_ws_url = target.get("webSocketDebuggerUrl", "")
+        else:
+            # Connect to browser-level WebSocket
+            version_data = await asyncio.to_thread(
+                lambda: urllib.request.urlopen(
+                    f"http://127.0.0.1:{inst.cdp_port}/json/version", timeout=5
+                ).read()
+            )
+            version_info = json.loads(version_data)
+            chrome_ws_url = version_info.get("webSocketDebuggerUrl", "")
+
+        if not chrome_ws_url:
+            await websocket.close(code=1011, reason="No WebSocket URL in CDP info")
+            return
+
+        # Ensure the URL points to localhost (Chrome returns 127.0.0.1)
+        chrome_ws_url = chrome_ws_url.replace("127.0.0.1", "127.0.0.1")
+
     except Exception as e:
         await websocket.close(code=1011, reason=f"Failed to get CDP info: {e}")
         return
 
-    if not browser_ws_url:
-        await websocket.close(code=1011, reason="No WebSocket URL in CDP version info")
-        return
-
     # Connect to Chrome's local CDP WebSocket
     import websocket as ws_lib
-    chrome_ws = ws_lib.create_connection(browser_ws_url)
+    chrome_ws = ws_lib.create_connection(chrome_ws_url)
 
     await websocket.accept()
 
@@ -324,5 +350,4 @@ async def cdp_proxy_ws(websocket: WebSocket, session_id: str):
             except Exception:
                 pass
 
-    import asyncio as _asyncio
-    await _asyncio.gather(_ws_to_chrome(), _ws_from_chrome())
+    await asyncio.gather(_ws_to_chrome(), _ws_from_chrome())

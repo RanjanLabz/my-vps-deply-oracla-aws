@@ -395,8 +395,8 @@ class CDPClient:
                 pages = json.loads(urllib.request.urlopen(f"{proxy_base}/json", timeout=5).read())
                 for p in pages:
                     if p["type"] == "page":
-                        # Rewrite WebSocket URL to go through Chrome Manager proxy
-                        ws_url = f"ws://{cdp_host}:{cdp_base}/cdp/{session.session_id}/ws"
+                        page_id = p.get("id", "")
+                        ws_url = f"ws://{cdp_host}:{cdp_base}/cdp/{session.session_id}/ws?target={page_id}"
                         ws = ws_lib.create_connection(ws_url)
                         ws.send(json.dumps({"id": 30, "method": "Page.navigate",
                                            "params": {"url": f"https://{session.site}/fx/tools/flow"}}))
@@ -461,15 +461,18 @@ class CDPClient:
                         (target for target in targets if target.get("type") == "page"),
                         None,
                     )
-                debugger_url = page.get("webSocketDebuggerUrl", "") if page else ""
-                if debugger_url:
+                if page:
+                    page_id = page.get("id", "")
                     if CHROME_MANAGER_URL:
-                        # Rewrite WebSocket URL to go through Chrome Manager proxy
-                        debugger_url = f"ws://{cdp_host}:{cdp_base}/cdp/{session.session_id}/ws"
-                    driver = CDPDriver(debugger_url)
-                    await asyncio.to_thread(driver.connect)
-                    session.driver = driver
-                    return debugger_url
+                        # Connect through Chrome Manager WebSocket proxy with target ID
+                        debugger_url = f"ws://{cdp_host}:{cdp_base}/cdp/{session.session_id}/ws?target={page_id}"
+                    else:
+                        debugger_url = page.get("webSocketDebuggerUrl", "")
+                    if debugger_url:
+                        driver = CDPDriver(debugger_url)
+                        await asyncio.to_thread(driver.connect)
+                        session.driver = driver
+                        return debugger_url
             except Exception:
                 pass
             await asyncio.sleep(0.5)
