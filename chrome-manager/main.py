@@ -226,6 +226,40 @@ async def restart_all():
             results.append({"session_id": session_id, "error": str(e)})
     return {"results": results}
 
+# ─── Background health check: remove dead Chrome processes ───
+@app.on_event("startup")
+async def start_health_checker():
+    async def _check():
+        while True:
+            await asyncio.sleep(10)
+            dead = []
+            for sid, inst in list(_instances.items()):
+                alive = False
+                try:
+                    os.kill(inst.pid, 0)
+                    alive = True
+                except (ProcessLookupError, PermissionError):
+                    pass
+                if not alive:
+                    dead.append(sid)
+                else:
+                    # Also verify CDP port is responsive
+                    try:
+                        await asyncio.to_thread(
+                            lambda: urllib.request.urlopen(
+                                f"http://127.0.0.1:{inst.cdp_port}/json/version", timeout=3
+                            ).read()
+                        )
+                    except Exception:
+                        dead.append(sid)
+            for sid in dead:
+                inst = _instances.pop(sid, None)
+                if inst:
+                    logger.warning("Health check: removed dead instance %s (pid=%d)", sid[:20], inst.pid)
+    import threading
+    asyncio.get_event_loop().create_task(_check())
+
+
 # ─── Cleanup on shutdown ─────────────────────────────────────
 @app.on_event("shutdown")
 async def shutdown():
