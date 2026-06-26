@@ -106,6 +106,7 @@ CHROME_MANAGER_ACCOUNT_LOCK_TTL = int(os.environ.get("CHROME_MANAGER_ACCOUNT_LOC
 CHROME_MANAGER_STALE_LOCK_RECOVERY = int(os.environ.get("CHROME_MANAGER_STALE_LOCK_RECOVERY", "300"))  # seconds
 CHROME_IDLE_TIMEOUT = int(os.environ.get("CHROME_IDLE_TIMEOUT", "600"))  # seconds before auto-close (10 min)
 CHROME_BINARY = os.environ.get("CHROME_BINARY", str(BASE_DIR / "chrome_for_testing" / "chrome-win64" / "chrome.exe"))
+CHROME_MANAGER_URL = os.environ.get("CHROME_MANAGER_URL", "")  # e.g. http://flowkit-chrome:8200
 
 # ─── Header Randomization Pools ─────────────────────────────
 USER_AGENTS = [

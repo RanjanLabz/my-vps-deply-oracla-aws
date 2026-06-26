@@ -1,0 +1,17 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install deps
+COPY frontend/package.json frontend/package-lock.json* /app/
+RUN npm install
+
+# Copy frontend code
+COPY frontend/ /app/
+
+# Build
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "start"]

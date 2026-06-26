@@ -21,6 +21,8 @@ chrome_profiles/
 .env
 .env.local
 .env.production
+!.env.docker
+!.env.example
 
 # Database
 *.db
@@ -57,3 +59,6 @@ tmp/
 # Terraform
 terraform/oracle/terraform.tfvars
 terraform/oracle/.terraform/
+
+# Docker
+docker-compose.override.yml

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Callable
 
-from agent.config import CHROME_MANAGER_PROFILE_DIR, CHROME_MANAGER_EXTENSION_DIR, CHROME_IDLE_TIMEOUT, CHROME_BINARY, CHROME_MANAGER_MAX_PROFILES
+from agent.config import CHROME_MANAGER_PROFILE_DIR, CHROME_MANAGER_EXTENSION_DIR, CHROME_IDLE_TIMEOUT, CHROME_BINARY, CHROME_MANAGER_MAX_PROFILES, CHROME_MANAGER_URL
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,7 @@ class CDPSession:
     site: str
     profile_dir: str
     pid: Optional[int] = None
+    cdp_port: int = 9223
     driver: Optional[CDPDriver] = None
     bearer_token: Optional[str] = None
     token_captured_at: Optional[float] = None
@@ -205,7 +206,11 @@ class CDPClient:
             return session, True
 
     async def launch(self, account_id: str, site: str, profile_dir: str) -> CDPSession:
-        """Launch Chrome for Testing with --load-extension (no dialog needed)."""
+        """Launch Chrome for Testing with --load-extension (no dialog needed).
+
+        When CHROME_MANAGER_URL is set, delegates to the Chrome Manager API
+        instead of launching Chrome directly via subprocess.
+        """
         session_id = os.path.basename(profile_dir)
         os.makedirs(profile_dir, exist_ok=True)
 
@@ -218,7 +223,15 @@ class CDPClient:
 
         logger.info("Launching Chrome: profile=%s", session_id[:8])
 
-        # Use Chrome for Testing (accepts --load-extension)
+        # ── Chrome Manager mode ────────────────────────────────
+        if CHROME_MANAGER_URL:
+            await self._launch_via_chrome_manager(session, account_id, site)
+            self._sessions[session_id] = session
+            logger.info("Chrome launched via Chrome Manager: session=%s cdp_port=%d",
+                        session_id[:8], session.cdp_port)
+            return session
+
+        # ── Direct subprocess mode (original) ──────────────────
         chrome_exe = CHROME_BINARY
         if not os.path.exists(chrome_exe):
             raise RuntimeError(f"Chrome for Testing not found: {chrome_exe}")
@@ -306,6 +319,57 @@ class CDPClient:
         logger.info("Chrome launched: pid=%d, session=%s", session.pid, session_id[:8])
         return session
 
+    async def _launch_via_chrome_manager(self, session: CDPSession, account_id: str, site: str):
+        """Launch Chrome via the Chrome Manager API (Docker mode)."""
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{CHROME_MANAGER_URL}/chrome/launch",
+                json={"account_id": account_id, "site": site, "profile_name": session.session_id},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        session.pid = data["pid"]
+        session.cdp_port = data["cdp_port"]
+        session.status = data.get("status", "RUNNING")
+
+        # Record profile launch in DB
+        try:
+            from agent.db.schema import get_db
+            import uuid as _uuid
+            from datetime import datetime, timezone
+            db = await get_db()
+            profile_db_id = str(_uuid.uuid4())
+            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            await db.execute(
+                "INSERT INTO chrome_profile (id, account_id, site, profile_dir, pid, status, created_at) VALUES (?,?,?,?,?,?,?)",
+                (profile_db_id, account_id, site, data.get("profile_dir", ""), data["pid"], "ACTIVE", now_str)
+            )
+            await db.commit()
+        except Exception as e:
+            logger.warning("Failed to record chrome_profile on launch: %s", e)
+
+        # Connect CDP driver to Chrome via Chrome Manager's CDP port
+        try:
+            debugger_url = await self._connect_cdp(session)
+            logger.info("CDP connected (Chrome Manager): %s", debugger_url[:60])
+        except Exception as e:
+            logger.warning("CDP connect failed (Chrome Manager): %s", e)
+
+        # Auto-navigate to labs.google to trigger token capture
+        try:
+            await self._navigate_to_flow(session)
+        except Exception as e:
+            logger.warning("Auto-navigate to Flow failed: %s", e)
+
+        # Start token capture listener in background
+        asyncio.create_task(self._capture_token_loop(session))
+
+        # Start auth token interceptor via Fetch domain
+        asyncio.create_task(self._intercept_auth_tokens(session))
+
     async def _navigate_to_flow(self, session: CDPSession):
         """Navigate Chrome to labs.google/fx/tools/flow to trigger token capture."""
         import websocket as ws_lib
@@ -313,9 +377,10 @@ class CDPClient:
 
         await asyncio.sleep(2)  # Wait for extension to initialize
 
+        cdp_port = session.cdp_port
         # Find a page tab to navigate
         try:
-            pages = json.loads(urllib.request.urlopen("http://127.0.0.1:9223/json", timeout=5).read())
+            pages = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{cdp_port}/json", timeout=5).read())
             for p in pages:
                 if p["type"] == "page":
                     ws = ws_lib.create_connection(p["webSocketDebuggerUrl"])
@@ -332,12 +397,13 @@ class CDPClient:
         """Connect CDPDriver to a page target on Chrome's debugging port."""
         import urllib.request
 
+        cdp_port = session.cdp_port
         # Wait for Chrome to start debugging server
         for _ in range(20):
             try:
                 data = await asyncio.to_thread(
                     lambda: urllib.request.urlopen(
-                        "http://127.0.0.1:9223/json", timeout=2
+                        f"http://127.0.0.1:{cdp_port}/json", timeout=2
                     ).read()
                 )
                 targets = json.loads(data)

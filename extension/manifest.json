@@ -8,7 +8,9 @@
     "https://labs.google/*",
     "https://aisandbox-pa.googleapis.com/*",
     "http://127.0.0.1:8100/*",
-    "http://*:8100/*"
+    "http://*:8100/*",
+    "http://127.0.0.1:8200/*",
+    "http://*:8200/*"
   ],
   "background": {
     "service_worker": "background.js"

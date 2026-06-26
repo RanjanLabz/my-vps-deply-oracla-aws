@@ -327,8 +327,9 @@ async def try_acquire_account(model: str, site: str = None, project_id: str = No
             acc_name = account.get("name", account["id"][:8])
 
             # Match model directly OR via reverse mapping (short name <-> API name)
+            # Empty models list means account accepts ALL models
             model_short = _REVERSE_MODELS.get(model, model)
-            matched = model in models or model_short in models
+            matched = not models or model in models or model_short in models
             if not matched:
                 logger.debug("Account %s skipped: model %s not in %s", acc_name, model, models)
                 continue

@@ -1,0 +1,72 @@
+version: "3.8"
+
+services:
+  # ── Backend (API + WebSocket Server) ──────────────────────
+  flowkit-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: flowkit-backend
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+      - "9222:9222"
+    env_file:
+      - .env
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8100
+      - WS_HOST=0.0.0.0
+      - WS_PORT=9222
+      - CHROME_MANAGER_URL=http://flowkit-chrome:8200
+    networks:
+      - flowkit-net
+    depends_on:
+      flowkit-chrome:
+        condition: service_healthy
+
+  # ── Chrome Manager (Chrome + Xvfb) ───────────────────────
+  flowkit-chrome:
+    build:
+      context: .
+      dockerfile: chrome-manager/Dockerfile
+    container_name: flowkit-chrome
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+      - "9223-9230:9223-9230"
+    environment:
+      - DISPLAY=:99
+      - CHROME_BINARY=/usr/bin/chromium
+      - EXTENSION_DIR=/app/extension
+      - BACKEND_WS_URL=ws://flowkit-backend:9222
+      - BACKEND_HTTP_URL=http://flowkit-backend:8100
+      - CDP_PORT_START=9223
+      - MAX_INSTANCES=3
+    networks:
+      - flowkit-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend (Next.js) ───────────────────────────────────
+  flowkit-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: flowkit-ui
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8100
+    networks:
+      - flowkit-net
+    depends_on:
+      - flowkit-backend
+
+networks:
+  flowkit-net:
+    driver: bridge

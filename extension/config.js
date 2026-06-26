@@ -14,16 +14,38 @@ const FlowConfig = {
     authToken: null,  // Optional auth token for WS handshake
   },
 
+  // Chrome Manager URL for Docker mode (port 8200)
+  _chromeManagerUrl: 'http://127.0.0.1:8200',
+
   // Loaded values (from storage or defaults)
   _loaded: null,
 
   /**
-   * Load configuration from chrome.storage.local.
-   * Falls back to defaults if not set.
+   * Load configuration.
+   * In Docker mode: fetches from Chrome Manager API first.
+   * Falls back to chrome.storage.local, then defaults.
    */
   async load() {
     if (this._loaded) return this._loaded;
 
+    // Try Chrome Manager config endpoint first (Docker mode)
+    try {
+      const resp = await fetch(`${this._chromeManagerUrl}/config`);
+      if (resp.ok) {
+        const remoteConfig = await resp.json();
+        this._loaded = {
+          wsUrl: remoteConfig.ws_url || this.defaults.wsUrl,
+          httpCallbackUrl: remoteConfig.http_callback_url || this.defaults.httpCallbackUrl,
+          authToken: remoteConfig.auth_token || this.defaults.authToken,
+        };
+        console.log('[FlowConfig] Loaded from Chrome Manager:', this._loaded.wsUrl);
+        return this._loaded;
+      }
+    } catch (e) {
+      // Chrome Manager not available — single VPS mode, fall through
+    }
+
+    // Fall back to chrome.storage.local (single VPS or split-VPS mode)
     try {
       const stored = await chrome.storage.local.get([
         'config_ws_url',
