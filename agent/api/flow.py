@@ -202,6 +202,8 @@ async def ensure_fresh_session(account: dict, timeout: float = 30.0, max_attempt
                                         new_session.driver = driver
                                         cdp._sessions[cm_pid] = new_session
                                         session = new_session
+                                        # Start token capture loop for re-adopted session
+                                        asyncio.create_task(cdp._capture_token_loop(new_session))
                                         logger.info("Re-adopted Chrome Manager instance pid=%d for account %s (port=%d)", cm_pid, account_id[:8], cm_port)
                                         break
                                 except Exception as drv_e:
