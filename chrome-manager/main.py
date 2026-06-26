@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -235,3 +235,94 @@ async def shutdown():
         except ProcessLookupError:
             pass
     _instances.clear()
+
+
+# ─── CDP Proxy ──────────────────────────────────────────────
+# Chrome binds --remote-debugging-port to 127.0.0.1 only (even with
+# --remote-debugging-address=0.0.0.0 on Chrome 136+).  These proxy
+# endpoints let the backend container reach Chrome's CDP through
+# Chrome Manager's port 8200.
+
+def _find_instance(session_id: str) -> ChromeInstance:
+    inst = _instances.get(session_id)
+    if not inst:
+        raise HTTPException(404, f"Session {session_id} not found")
+    return inst
+
+
+@app.get("/cdp/{session_id}/{path:path}")
+async def cdp_proxy_http(session_id: str, path: str):
+    """Proxy HTTP requests to Chrome's CDP port (e.g. /json, /json/version)."""
+    inst = _find_instance(session_id)
+    import urllib.request
+    try:
+        data = await asyncio.to_thread(
+            lambda: urllib.request.urlopen(
+                f"http://127.0.0.1:{inst.cdp_port}/{path}", timeout=5
+            ).read()
+        )
+        return Response(content=data, media_type="application/json")
+    except Exception as e:
+        raise HTTPException(502, f"CDP proxy error: {e}")
+
+
+@app.websocket("/cdp/{session_id}/ws")
+async def cdp_proxy_ws(websocket: WebSocket, session_id: str):
+    """Proxy WebSocket to Chrome's CDP WebSocket."""
+    inst = _find_instance(session_id)
+
+    # Get the browser WebSocket URL from Chrome
+    import urllib.request
+    try:
+        version_data = await asyncio.to_thread(
+            lambda: urllib.request.urlopen(
+                f"http://127.0.0.1:{inst.cdp_port}/json/version", timeout=5
+            ).read()
+        )
+        version_info = json.loads(version_data)
+        browser_ws_url = version_info.get("webSocketDebuggerUrl", "")
+    except Exception as e:
+        await websocket.close(code=1011, reason=f"Failed to get CDP info: {e}")
+        return
+
+    if not browser_ws_url:
+        await websocket.close(code=1011, reason="No WebSocket URL in CDP version info")
+        return
+
+    # Connect to Chrome's local CDP WebSocket
+    import websocket as ws_lib
+    chrome_ws = ws_lib.create_connection(browser_ws_url)
+
+    await websocket.accept()
+
+    # Bidirectional proxy
+    async def _ws_to_chrome():
+        try:
+            while True:
+                data = await websocket.receive_text()
+                await asyncio.to_thread(chrome_ws.send, data)
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+        finally:
+            try:
+                chrome_ws.close()
+            except Exception:
+                pass
+
+    async def _ws_from_chrome():
+        try:
+            while True:
+                data = await asyncio.to_thread(chrome_ws.recv)
+                await websocket.send_text(data)
+        except Exception:
+            pass
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    import asyncio as _asyncio
+    await _asyncio.gather(_ws_to_chrome(), _ws_from_chrome())
