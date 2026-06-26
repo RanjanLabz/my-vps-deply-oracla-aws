@@ -294,6 +294,7 @@ async def list_profiles():
                     cm_uptime = ci.get("uptime", 0)
                     cm_auto_close = max(0, CHROME_IDLE_TIMEOUT - cm_uptime)
                     # Check if CDPClient has an active session with token for this account
+                    # OR if the extension has a stored flow key for this account
                     cm_has_token = False
                     try:
                         from agent.services.cdp_client import get_cdp_client as _get_cdp2
@@ -302,6 +303,14 @@ async def list_profiles():
                             if _sess.account_id == cm_acct and _sess.bearer_token:
                                 cm_has_token = True
                                 break
+                        if not cm_has_token:
+                            from agent.services.flow_client import get_flow_client as _get_fc
+                            _fc = _get_fc()
+                            _stored_key = _fc.get_account_flow_key(cm_acct)
+                            if _stored_key:
+                                _ws = _fc.get_ws_for_flow_key(_stored_key)
+                                if _ws and _ws in _fc._extension_ws_set:
+                                    cm_has_token = True
                     except Exception:
                         pass
                     profiles.append({

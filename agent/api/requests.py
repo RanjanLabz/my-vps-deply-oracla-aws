@@ -8,6 +8,21 @@ from agent.db import crud
 router = APIRouter(prefix="/requests", tags=["requests"])
 
 
+def _check_extension_token(account_id: str) -> bool:
+    """Check if the extension has a valid flow key for this account."""
+    try:
+        from agent.services.flow_client import get_flow_client
+        fc = get_flow_client()
+        stored_key = fc.get_account_flow_key(account_id)
+        if stored_key:
+            ws = fc.get_ws_for_flow_key(stored_key)
+            if ws and ws in fc._extension_ws_set:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 class RequestUpdate(BaseModel):
     status: Optional[StatusType] = None
     media_id: Optional[str] = None
@@ -193,7 +208,7 @@ async def flow_debug():
                         "account_name": accounts.get(cm_acct, {}).get("name", cm_acct[:12] if cm_acct else "?"),
                         "pid": ci.get("pid", 0),
                         "status": ci.get("status", "UNKNOWN"),
-                        "has_token": any(s.account_id == cm_acct and s.bearer_token for s in cdp._sessions.values()),
+                        "has_token": (any(s.account_id == cm_acct and s.bearer_token for s in cdp._sessions.values()) or _check_extension_token(cm_acct)),
                         "uptime_s": ci.get("uptime", 0),
                     })
     except Exception:
