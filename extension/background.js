@@ -1,14 +1,14 @@
-/**
- * Flow Kit — Chrome Extension Background Service Worker
- *
- * Connects to Python agent via WebSocket (agent runs WS server).
- * Captures bearer token, solves reCAPTCHA, proxies API calls through browser.
- *
- * Configuration (single-VPS or split-VPS):
- *   - config_ws_url: WebSocket server URL (default: ws://127.0.0.1:9222)
- *   - config_http_callback_url: HTTP callback URL (default: http://127.0.0.1:8100/api/ext/callback)
- *   - config_auth_token: Auth token for WS handshake (optional)
- */
+// Flow Kit — Chrome Extension Background Service Worker
+//
+// Connects to Python agent via WebSocket (agent runs WS server).
+// Captures bearer token, solves reCAPTCHA, proxies API calls through browser.
+//
+// Configuration (single-VPS or split-VPS):
+//   - config_ws_url: WebSocket server URL (default: ws://127.0.0.1:9222)
+//   - config_http_callback_url: HTTP callback URL (default: http://127.0.0.1:8100/api/ext/callback)
+//   - config_auth_token: Auth token for WS handshake (optional)
+
+importScripts('config.js');
 
 // NOTE: This is a browser-restricted public API key — safe to ship in extension bundles.
 const API_KEY = 'AIzaSyBtrm0o5ab1c-Ec8ZuLcGt3oJAA5VWt3pY';
@@ -36,6 +36,21 @@ let metrics = {
 // ─── Load Config ────────────────────────────────────────────
 
 async function loadConfig() {
+  // In Docker mode, try FlowConfig (fetches from Chrome Manager port 8200) first
+  if (typeof FlowConfig !== 'undefined') {
+    try {
+      const cfg = await FlowConfig.load();
+      _config.wsUrl = cfg.wsUrl || _config.wsUrl;
+      _config.httpCallbackUrl = cfg.httpCallbackUrl || _config.httpCallbackUrl;
+      _config.authToken = cfg.authToken || _config.authToken;
+      console.log('[FlowConfig] Loaded from Chrome Manager:', _config.wsUrl);
+      return;
+    } catch (e) {
+      console.warn('[FlowConfig] Chrome Manager not available, falling back:', e);
+    }
+  }
+
+  // Fall back to chrome.storage.local (single VPS mode)
   try {
     const stored = await chrome.storage.local.get([
       'config_ws_url',
@@ -45,14 +60,11 @@ async function loadConfig() {
     if (stored.config_ws_url) _config.wsUrl = stored.config_ws_url;
     if (stored.config_http_callback_url) _config.httpCallbackUrl = stored.config_http_callback_url;
     if (stored.config_auth_token) _config.authToken = stored.config_auth_token;
-    console.log('[FlowConfig] Loaded:', _config.wsUrl);
+    console.log('[FlowConfig] Loaded from storage:', _config.wsUrl);
   } catch (e) {
     console.warn('[FlowConfig] Using defaults:', e);
   }
 }
-
-// Load config on startup
-loadConfig();
 
 // ─── URL → Log Type Classifier ─────────────────────────────
 
@@ -94,8 +106,10 @@ function broadcastRequestLog() {
 
 // ─── Startup ────────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(init);
-chrome.runtime.onStartup.addListener(init);
+let _configReady = loadConfig();  // Start loading config immediately
+
+chrome.runtime.onInstalled.addListener(() => init());
+chrome.runtime.onStartup.addListener(() => init());
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'reconnect') connectToAgent();
   if (alarm.name === 'keepAlive') keepAlive();
@@ -105,6 +119,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 async function init() {
+  await _configReady;  // Wait for config to be loaded (Chrome Manager or storage)
   const data = await chrome.storage.local.get(['flowKey', 'metrics', 'callbackSecret']);
   if (data.flowKey) flowKey = data.flowKey;
   if (data.metrics) Object.assign(metrics, data.metrics);
