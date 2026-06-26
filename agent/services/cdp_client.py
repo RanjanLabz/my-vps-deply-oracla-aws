@@ -374,16 +374,25 @@ class CDPClient:
         """Navigate Chrome to labs.google/fx/tools/flow to trigger token capture."""
         import websocket as ws_lib
         import urllib.request
+        from urllib.parse import urlparse
 
         await asyncio.sleep(2)  # Wait for extension to initialize
 
         cdp_port = session.cdp_port
+        # In Chrome Manager mode, CDP is on the Chrome Manager host
+        if CHROME_MANAGER_URL:
+            cdp_host = urlparse(CHROME_MANAGER_URL).hostname or "127.0.0.1"
+        else:
+            cdp_host = "127.0.0.1"
         # Find a page tab to navigate
         try:
-            pages = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{cdp_port}/json", timeout=5).read())
+            pages = json.loads(urllib.request.urlopen(f"http://{cdp_host}:{cdp_port}/json", timeout=5).read())
             for p in pages:
                 if p["type"] == "page":
-                    ws = ws_lib.create_connection(p["webSocketDebuggerUrl"])
+                    ws_url = p["webSocketDebuggerUrl"]
+                    if CHROME_MANAGER_URL and "127.0.0.1" in ws_url:
+                        ws_url = ws_url.replace("127.0.0.1", cdp_host)
+                    ws = ws_lib.create_connection(ws_url)
                     ws.send(json.dumps({"id": 30, "method": "Page.navigate",
                                        "params": {"url": f"https://{session.site}/fx/tools/flow"}}))
                     ws.recv()
@@ -396,14 +405,20 @@ class CDPClient:
     async def _connect_cdp(self, session: CDPSession) -> str:
         """Connect CDPDriver to a page target on Chrome's debugging port."""
         import urllib.request
+        from urllib.parse import urlparse
 
         cdp_port = session.cdp_port
+        # In Chrome Manager mode, CDP is on the Chrome Manager host
+        if CHROME_MANAGER_URL:
+            cdp_host = urlparse(CHROME_MANAGER_URL).hostname or "127.0.0.1"
+        else:
+            cdp_host = "127.0.0.1"
         # Wait for Chrome to start debugging server
         for _ in range(20):
             try:
                 data = await asyncio.to_thread(
                     lambda: urllib.request.urlopen(
-                        f"http://127.0.0.1:{cdp_port}/json", timeout=2
+                        f"http://{cdp_host}:{cdp_port}/json", timeout=2
                     ).read()
                 )
                 targets = json.loads(data)
@@ -422,6 +437,9 @@ class CDPClient:
                     )
                 debugger_url = page.get("webSocketDebuggerUrl", "") if page else ""
                 if debugger_url:
+                    # Replace 127.0.0.1 in debugger_url with cdp_host for Docker
+                    if CHROME_MANAGER_URL and "127.0.0.1" in debugger_url:
+                        debugger_url = debugger_url.replace("127.0.0.1", cdp_host)
                     driver = CDPDriver(debugger_url)
                     await asyncio.to_thread(driver.connect)
                     session.driver = driver
