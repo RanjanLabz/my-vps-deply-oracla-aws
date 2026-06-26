@@ -226,9 +226,9 @@ class CDPClient:
         # ── Chrome Manager mode ────────────────────────────────
         if CHROME_MANAGER_URL:
             await self._launch_via_chrome_manager(session, account_id, site)
-            self._sessions[session_id] = session
+            self._sessions[session.session_id] = session
             logger.info("Chrome launched via Chrome Manager: session=%s cdp_port=%d",
-                        session_id[:8], session.cdp_port)
+                        session.session_id[:8], session.cdp_port)
             return session
 
         # ── Direct subprocess mode (original) ──────────────────
@@ -334,6 +334,13 @@ class CDPClient:
         session.pid = data["pid"]
         session.cdp_port = data["cdp_port"]
         session.status = data.get("status", "RUNNING")
+        # Use Chrome Manager's session_id for CDP proxy routing
+        cm_session_id = data.get("session_id", session.session_id)
+        session.session_id = cm_session_id
+        # Update _sessions dict key to match
+        if session.session_id in self._sessions:
+            del self._sessions[session.session_id]
+        self._sessions[cm_session_id] = session
 
         # Record profile launch in DB
         try:
@@ -351,7 +358,7 @@ class CDPClient:
         except Exception as e:
             logger.warning("Failed to record chrome_profile on launch: %s", e)
 
-        # Connect CDP driver to Chrome via Chrome Manager's CDP port
+        # Connect CDP driver to Chrome via Chrome Manager's CDP proxy
         try:
             debugger_url = await self._connect_cdp(session)
             logger.info("CDP connected (Chrome Manager): %s", debugger_url[:60])
