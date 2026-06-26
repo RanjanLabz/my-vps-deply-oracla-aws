@@ -280,19 +280,25 @@ class CDPClient:
         session.pid = proc.pid
         session.status = "RUNNING"
 
-        # Record profile launch in DB
+        # Record profile launch in DB (skip if account_id doesn't exist in account table)
         try:
             from agent.db.schema import get_db
             import uuid as _uuid
             from datetime import datetime, timezone
             db = await get_db()
-            profile_db_id = str(_uuid.uuid4())
-            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            await db.execute(
-                "INSERT INTO chrome_profile (id, account_id, site, profile_dir, pid, status, created_at) VALUES (?,?,?,?,?,?,?)",
-                (profile_db_id, account_id, site, profile_dir, proc.pid, "ACTIVE", now_str)
-            )
-            await db.commit()
+            if account_id and account_id != "default":
+                cur = await db.execute("SELECT 1 FROM account WHERE id=?", (account_id,))
+                acct_exists = await cur.fetchone()
+            else:
+                acct_exists = False
+            if acct_exists:
+                profile_db_id = str(_uuid.uuid4())
+                now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                await db.execute(
+                    "INSERT INTO chrome_profile (id, account_id, site, profile_dir, pid, status, created_at) VALUES (?,?,?,?,?,?,?)",
+                    (profile_db_id, account_id, site, profile_dir, proc.pid, "ACTIVE", now_str)
+                )
+                await db.commit()
         except Exception as e:
             logger.warning("Failed to record chrome_profile on launch: %s", e)
 
@@ -342,19 +348,26 @@ class CDPClient:
             del self._sessions[session.session_id]
         self._sessions[cm_session_id] = session
 
-        # Record profile launch in DB
+        # Record profile launch in DB (skip if account_id doesn't exist in account table)
         try:
             from agent.db.schema import get_db
             import uuid as _uuid
             from datetime import datetime, timezone
             db = await get_db()
-            profile_db_id = str(_uuid.uuid4())
-            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            await db.execute(
-                "INSERT INTO chrome_profile (id, account_id, site, profile_dir, pid, status, created_at) VALUES (?,?,?,?,?,?,?)",
-                (profile_db_id, account_id, site, data.get("profile_dir", ""), data["pid"], "ACTIVE", now_str)
-            )
-            await db.commit()
+            # Check if account_id exists to avoid FOREIGN KEY constraint failure
+            if account_id and account_id != "default":
+                cur = await db.execute("SELECT 1 FROM account WHERE id=?", (account_id,))
+                acct_exists = await cur.fetchone()
+            else:
+                acct_exists = False
+            if acct_exists:
+                profile_db_id = str(_uuid.uuid4())
+                now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                await db.execute(
+                    "INSERT INTO chrome_profile (id, account_id, site, profile_dir, pid, status, created_at) VALUES (?,?,?,?,?,?,?)",
+                    (profile_db_id, account_id, site, data.get("profile_dir", ""), data["pid"], "ACTIVE", now_str)
+                )
+                await db.commit()
         except Exception as e:
             logger.warning("Failed to record chrome_profile on launch: %s", e)
 
